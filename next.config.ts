@@ -39,30 +39,40 @@ const nextConfig = {
 
   async rewrites() {
     return [
-      {
-        source: '/api/:path*',
-        destination: 'http://localhost:3001/api/:path*',
-      },
-      {
-        source: '/:slug*me:rest*',
-        destination: '/location-from-me/:slug*me:rest*',
-      },
-      {
-        source: '/how-far-is/:path*',
-        destination: '/how-far-is/:path*',
-      },
-      {
-        source: '/location-from-location/:slug',
-        destination: '/location-from-location/:slug',
-      },
-      {
+       {
+      source: '/api/:path*',
+      destination: 'http://localhost:3001/api/:path*',
+    },
+    {
+      source: '/:slug*me:rest*',
+      destination: '/location-from-me/:slug*me:rest*',
+    },
+    {
+      // Matches how-far-is-<place>-from-me
+       source: '/how-far-is-:fromCountry-from-me',
+      destination: '/location-from-me/:fromCountry-from-me',
+    },
+    {
+      // Match "how-far-is-X-from-Y"
+      source: '/how-far-is-:fromCountry-from-:toCountry',
+      destination: '/location-from-location/:fromCountry-from-:toCountry',
+    },
+    {
+      source: '/how-far-is/:path*',
+      destination: '/how-far-is/:path*',
+    },
+    {
+      source: '/location-from-location/:slug',
+      destination: '/location-from-location/:slug',
+    },
+    {
       source: '/location-to-location',
       destination: '/location-from-location/location-to-location',
     },
-      {
-        source: '/:path*',
-        destination: '/404',
-      },
+    {
+      source: '/:path*',
+      destination: '/404',
+    },
     ];
   },
 
