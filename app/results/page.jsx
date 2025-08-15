@@ -5,19 +5,7 @@ import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import Header from "../../components/Header";
 import Footer from "../../components/Footer";
-import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-
-// Fix default marker icons in Next.js
-import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
-import markerIcon from "leaflet/dist/images/marker-icon.png";
-import markerShadow from "leaflet/dist/images/marker-shadow.png";
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: markerIcon2x?.src || markerIcon2x,
-  iconUrl: markerIcon?.src || markerIcon,
-  shadowUrl: markerShadow?.src || markerShadow,
-});
 
 // Dynamically import react-leaflet (avoids SSR issues)
 const MapContainer = dynamic(
@@ -45,14 +33,31 @@ export default function ResultsPage() {
   const radiusMiles = searchParams.get("radius") || "10";
   const radiusMeters = useMemo(() => milesToMeters(radiusMiles), [radiusMiles]);
 
-  const [center, setCenter] = useState([31.5204, 74.3587]); // fallback: Lahore
+  const [center, setCenter] = useState([31.5204, 74.3587]);
   const [loading, setLoading] = useState(true);
   const [geo, setGeo] = useState(null);
   const [places, setPlaces] = useState([]);
   const [cities, setCities] = useState([]);
   const [error, setError] = useState("");
 
-  // Step 1: Geocode text -> lat/lon
+  // ✅ Import Leaflet and fix marker icons only on client
+  useEffect(() => {
+    (async () => {
+      const L = (await import("leaflet")).default;
+      const markerIcon2x = (await import("leaflet/dist/images/marker-icon-2x.png")).default;
+      const markerIcon = (await import("leaflet/dist/images/marker-icon.png")).default;
+      const markerShadow = (await import("leaflet/dist/images/marker-shadow.png")).default;
+
+      delete L.Icon.Default.prototype._getIconUrl;
+      L.Icon.Default.mergeOptions({
+        iconRetinaUrl: markerIcon2x.src || markerIcon2x,
+        iconUrl: markerIcon.src || markerIcon,
+        shadowUrl: markerShadow.src || markerShadow,
+      });
+    })();
+  }, []);
+
+  // Geocoding + data fetch logic
   useEffect(() => {
     let isCancelled = false;
     async function run() {
@@ -70,7 +75,6 @@ export default function ResultsPage() {
         setGeo(g);
         setCenter([lat, lon]);
 
-        // Step 2: Fetch places & cities in parallel
         const [pRes, cRes] = await Promise.all([
           fetch(`/api/places?lat=${lat}&lon=${lon}&radius=${radiusMeters}`),
           fetch(`/api/cities?lat=${lat}&lon=${lon}&radius=${radiusMeters}`),
