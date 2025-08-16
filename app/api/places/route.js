@@ -1,32 +1,20 @@
-// Fetch only popular nearby places from Overpass (OpenStreetMap)
+// Fetch nearby "places" (amenities/tourism/leisure) from Overpass (OpenStreetMap)
 function buildOverpassQuery(lat, lon, radius) {
   // radius in meters
   return `
-    [out:json][timeout:25][limit:100];
+    [out:json][timeout:25];
     (
-      // Major tourist attractions (must have name)
-      node(around:${radius},${lat},${lon})[tourism~"attraction|museum|aquarium|zoo|theme_park|viewpoint|gallery"][name];
-      way(around:${radius},${lat},${lon})[tourism~"attraction|museum|aquarium|zoo|theme_park|viewpoint|gallery"][name];
-      relation(around:${radius},${lat},${lon})[tourism~"attraction|museum|aquarium|zoo|theme_park|viewpoint|gallery"][name];
+      node(around:${radius},${lat},${lon})[amenity];
+      way(around:${radius},${lat},${lon})[amenity];
+      relation(around:${radius},${lat},${lon})[amenity];
 
-      // Historic landmarks (castles, monuments, etc.)
-      node(around:${radius},${lat},${lon})[historic~"monument|castle|memorial|archaeological_site"][name];
-      way(around:${radius},${lat},${lon})[historic~"monument|castle|memorial|archaeological_site"][name];
-      relation(around:${radius},${lat},${lon})[historic~"monument|castle|memorial|archaeological_site"][name];
+      node(around:${radius},${lat},${lon})[tourism];
+      way(around:${radius},${lat},${lon})[tourism];
+      relation(around:${radius},${lat},${lon})[tourism];
 
-      // Major leisure facilities
-      node(around:${radius},${lat},${lon})[leisure~"park|stadium|garden|nature_reserve|golf_course"][name];
-      way(around:${radius},${lat},${lon})[leisure~"park|stadium|garden|nature_reserve|golf_course"][name];
-      relation(around:${radius},${lat},${lon})[leisure~"park|stadium|garden|nature_reserve|golf_course"][name];
-
-      // Places with Wikipedia/Wikidata entries (indicates notability)
-      node(around:${radius},${lat},${lon})[wikipedia][name];
-      way(around:${radius},${lat},${lon})[wikipedia][name];
-      relation(around:${radius},${lat},${lon})[wikipedia][name];
-      
-      node(around:${radius},${lat},${lon})[wikidata][name];
-      way(around:${radius},${lat},${lon})[wikidata][name];
-      relation(around:${radius},${lat},${lon})[wikidata][name];
+      node(around:${radius},${lat},${lon})[leisure];
+      way(around:${radius},${lat},${lon})[leisure];
+      relation(around:${radius},${lat},${lon})[leisure];
     );
     out center;
   `;
@@ -49,6 +37,7 @@ export async function GET(req) {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: `data=${encodeURIComponent(q)}`,
+      // Cache a little to reduce load; adjust to your needs
       next: { revalidate: 60 },
     });
     if (!r.ok) throw new Error(`Overpass error ${r.status}`);
@@ -56,6 +45,7 @@ export async function GET(req) {
   }
 
   try {
+    // primary + fallback mirrors
     const endpoints = [
       "https://overpass-api.de/api/interpreter",
       "https://overpass.kumi.systems/api/interpreter",
@@ -75,66 +65,46 @@ export async function GET(req) {
     if (!json) throw lastErr || new Error("Overpass failed");
 
     const elements = json.elements || [];
-    
-    // First pass - basic filtering and shaping
-    let items = elements.map((e) => {
-      const tags = e.tags || {};
-      const latNum = e.lat ?? e.center?.lat;
-      const lonNum = e.lon ?? e.center?.lon;
-      if (latNum == null || lonNum == null) return null;
+    // Shape into UI-friendly objects
+    const items = elements
+      .map((e) => {
+        const tags = e.tags || {};
+        const latNum = e.lat ?? e.center?.lat;
+        const lonNum = e.lon ?? e.center?.lon;
+        if (latNum == null || lonNum == null) return null;
 
-      const name = tags.name || "Unnamed Place";
-      const type = tags.amenity || tags.tourism || tags.leisure || tags.historic || "";
-      
-      return {
-        id: `${e.type}/${e.id}`,
-        name,
-        type,
-        lat: Number(latNum),
-        lon: Number(lonNum),
-        tags, // Keep all tags for secondary filtering
-        address: tags["addr:full"] || tags["addr:street"] || null,
-      };
-    }).filter(Boolean);
+        const name =
+          tags.name ||
+          tags["addr:housename"] ||
+          tags["amenity"] ||
+          tags["tourism"] ||
+          tags["leisure"] ||
+          "Place";
 
-    // Secondary filtering - ensure popularity
-    items = items.filter(item => {
-      // Keep if it has Wikipedia/Wikidata reference
-      if (item.tags.wikipedia || item.tags.wikidata) return true;
-      
-      // Keep specific high-value types
-      const highValueTypes = [
-        'attraction', 'museum', 'aquarium', 'zoo', 'theme_park', 
-        'viewpoint', 'gallery', 'monument', 'castle', 'memorial',
-        'archaeological_site', 'park', 'stadium', 'garden', 
-        'nature_reserve', 'golf_course'
-      ];
-      return highValueTypes.some(t => item.type.includes(t));
-    });
+        const type = tags.amenity || tags.tourism || tags.leisure || "";
+        return {
+          id: `${e.type}/${e.id}`,
+          name,
+          type,
+          lat: Number(latNum),
+          lon: Number(lonNum),
+          address: tags["addr:full"] || tags["addr:street"] || null,
+        };
+      })
+      .filter(Boolean);
 
-    // Remove duplicates (same name and nearby location)
-    const uniqueItems = [];
-    const seen = new Set();
-    
-    items.forEach(item => {
-      const key = `${item.name.toLowerCase()}|${item.lat.toFixed(3)}|${item.lon.toFixed(3)}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        uniqueItems.push(item);
-      }
-    });
-
-    // Sort by distance from center
+    // Optional: sort by rough distance from center
     const cLat = Number(lat),
-          cLon = Number(lon);
-    for (const it of uniqueItems) {
+      cLon = Number(lon);
+    for (const it of items) {
+      // very rough planar distance (ok for sorting)
       const dx = (it.lon - cLon) * 111320 * Math.cos((cLat * Math.PI) / 180);
       const dy = (it.lat - cLat) * 110540;
       it.distance = Math.sqrt(dx * dx + dy * dy);
     }
-    uniqueItems.sort((a, b) => a.distance - b.distance);
+    items.sort((a, b) => a.distance - b.distance);
 
-    return new Response(JSON.stringify(uniqueItems), {
+    return new Response(JSON.stringify(items), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
