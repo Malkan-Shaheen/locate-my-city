@@ -1,56 +1,46 @@
-// Fetch nearby popular "places" (amenities/tourism/leisure) from Overpass (OpenStreetMap)
+// Only fetch significant/touristic places that are likely to be popular
 function buildOverpassQuery(lat, lon, radius) {
   // radius in meters
-  // Only query for popular/significant place types
   return `
     [out:json][timeout:25];
     (
-      // Popular amenities
-      node(around:${radius},${lat},${lon})[amenity=restaurant];
-      node(around:${radius},${lat},${lon})[amenity=cafe];
-      // node(around:${radius},${lat},${lon})[amenity=bar];
-      // node(around:${radius},${lat},${lon})[amenity=pub];
-      // node(around:${radius},${lat},${lon})[amenity=fast_food];
-      // node(around:${radius},${lat},${lon})[amenity=ice_cream];
-      node(around:${radius},${lat},${lon})[amenity=bank];
-      node(around:${radius},${lat},${lon})[amenity=atm];
-      // node(around:${radius},${lat},${lon})[amenity=pharmacy];
-      node(around:${radius},${lat},${lon})[amenity=hospital];
-      // node(around:${radius},${lat},${lon})[amenity=clinic];
-      node(around:${radius},${lat},${lon})[amenity=doctors];
-      node(around:${radius},${lat},${lon})[amenity=cinema];
-      node(around:${radius},${lat},${lon})[amenity=theatre];
-      node(around:${radius},${lat},${lon})[amenity=nightclub];
-      node(around:${radius},${lat},${lon})[amenity=library];
-      node(around:${radius},${lat},${lon})[amenity=place_of_worship];
+      // High-traffic amenities
+      node(around:${radius},${lat},${lon})[amenity=restaurant][name];
+      node(around:${radius},${lat},${lon})[amenity=cafe][name];
+      node(around:${radius},${lat},${lon})[amenity=bar][name];
+      node(around:${radius},${lat},${lon})[amenity=pub][name];
+      node(around:${radius},${lat},${lon})[amenity=nightclub][name];
       
-      // Tourism attractions
-      node(around:${radius},${lat},${lon})[tourism=attraction];
-      node(around:${radius},${lat},${lon})[tourism=museum];
-      node(around:${radius},${lat},${lon})[tourism=hotel];
-      node(around:${radius},${lat},${lon})[tourism=guest_house];
-      node(around:${radius},${lat},${lon})[tourism=hostel];
-      node(around:${radius},${lat},${lon})[tourism=zoo];
-      node(around:${radius},${lat},${lon})[tourism=aquarium];
-      node(around:${radius},${lat},${lon})[tourism=theme_park];
-      node(around:${radius},${lat},${lon})[tourism=gallery];
-      node(around:${radius},${lat},${lon})[tourism=viewpoint];
-      node(around:${radius},${lat},${lon})[tourism=information];
+      // Tourist attractions
+      node(around:${radius},${lat},${lon})[tourism=attraction][name];
+      node(around:${radius},${lat},${lon})[tourism=museum][name];
+      node(around:${radius},${lat},${lon})[tourism=zoo][name];
+      node(around:${radius},${lat},${lon})[tourism=aquarium][name];
+      node(around:${radius},${lat},${lon})[tourism=theme_park][name];
+      node(around:${radius},${lat},${lon})[tourism=viewpoint][name];
       
-      // Leisure activities
-      // node(around:${radius},${lat},${lon})[leisure=park];
-      // node(around:${radius},${lat},${lon})[leisure=garden];
-      // node(around:${radius},${lat},${lon})[leisure=golf_course];
-      // node(around:${radius},${lat},${lon})[leisure=sports_center];
-      // node(around:${radius},${lat},${lon})[leisure=stadium];
-      // node(around:${radius},${lat},${lon})[leisure=swimming_pool];
-      // node(around:${radius},${lat},${lon})[leisure=marina];
-      // node(around:${radius},${lat},${lon})[leisure=ice_rink];
-      // node(around:${radius},${lat},${lon})[leisure=playground];
+      // Significant landmarks
+      node(around:${radius},${lat},${lon})[historic=monument][name];
+      node(around:${radius},${lat},${lon})[historic=castle][name];
+      node(around:${radius},${lat},${lon})[historic=church][name];
+      
+      // Popular leisure spots
+      node(around:${radius},${lat},${lon})[leisure=park][name];
+      node(around:${radius},${lat},${lon})[leisure=beach][name];
+      node(around:${radius},${lat},${lon})[leisure=marina][name];
+      
+      // Shopping areas
+      node(around:${radius},${lat},${lon})[shop=mall][name];
+      node(around:${radius},${lat},${lon})[shop=department_store][name];
+      
+      // Also include ways and relations for these important types
+      way(around:${radius},${lat},${lon})[tourism~"attraction|museum|zoo|aquarium|theme_park"][name];
+      relation(around:${radius},${lat},${lon})[tourism~"attraction|museum|zoo|aquarium|theme_park"][name];
     );
     out center;
   `;
 }
+
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const lat = searchParams.get("lat");
@@ -68,7 +58,6 @@ export async function GET(req) {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: `data=${encodeURIComponent(q)}`,
-      // Cache a little to reduce load; adjust to your needs
       next: { revalidate: 60 },
     });
     if (!r.ok) throw new Error(`Overpass error ${r.status}`);
@@ -76,7 +65,6 @@ export async function GET(req) {
   }
 
   try {
-    // primary + fallback mirrors
     const endpoints = [
       "https://overpass-api.de/api/interpreter",
       "https://overpass.kumi.systems/api/interpreter",
@@ -96,7 +84,32 @@ export async function GET(req) {
     if (!json) throw lastErr || new Error("Overpass failed");
 
     const elements = json.elements || [];
-    // Shape into UI-friendly objects
+    
+    // Calculate popularity score based on OSM tags
+    const calculatePopularityScore = (tags) => {
+      let score = 0;
+      
+      // Base points for having a name
+      if (tags.name) score += 10;
+      
+      // Points for specific popular types
+      if (tags.tourism === 'attraction') score += 20;
+      if (tags.tourism === 'museum') score += 30;
+      if (tags.tourism === 'zoo' || tags.tourism === 'aquarium') score += 25;
+      if (tags.amenity === 'restaurant') score += 15;
+      if (tags.leisure === 'park') score += 10;
+      
+      // Additional points for known brands or chains
+      if (tags.brand) score += 5;
+      if (tags['name:en']) score += 5; // International name suggests popularity
+      
+      // Points for capacity indicators
+      if (tags.capacity) score += parseInt(tags.capacity) / 100;
+      if (tags['building:levels']) score += parseInt(tags['building:levels']) * 2;
+      
+      return score;
+    };
+
     const items = elements
       .map((e) => {
         const tags = e.tags || {};
@@ -104,38 +117,47 @@ export async function GET(req) {
         const lonNum = e.lon ?? e.center?.lon;
         if (latNum == null || lonNum == null) return null;
 
-        const name =
-          tags.name ||
-          tags["addr:housename"] ||
-          tags["amenity"] ||
-          tags["tourism"] ||
-          tags["leisure"] ||
-          "Place";
+        // Skip if no name (less likely to be popular)
+        if (!tags.name) return null;
 
-        const type = tags.amenity || tags.tourism || tags.leisure || "";
+        const type = tags.amenity || tags.tourism || tags.leisure || tags.historic || tags.shop || 'attraction';
+        
         return {
           id: `${e.type}/${e.id}`,
-          name,
+          name: tags.name,
           type,
           lat: Number(latNum),
           lon: Number(lonNum),
           address: tags["addr:full"] || tags["addr:street"] || null,
+          popularity: calculatePopularityScore(tags),
+          tags // Include all tags for additional filtering if needed
         };
       })
-      .filter(Boolean);
+      .filter(Boolean)
+      // Filter to only include places with minimum popularity
+      .filter(item => item.popularity >= 15);
 
-    // Optional: sort by rough distance from center
+    // Calculate distance and sort by popularity then distance
     const cLat = Number(lat),
       cLon = Number(lon);
     for (const it of items) {
-      // very rough planar distance (ok for sorting)
       const dx = (it.lon - cLon) * 111320 * Math.cos((cLat * Math.PI) / 180);
       const dy = (it.lat - cLat) * 110540;
       it.distance = Math.sqrt(dx * dx + dy * dy);
     }
-    items.sort((a, b) => a.distance - b.distance);
+    
+    // Sort by popularity (descending) then by distance (ascending)
+    items.sort((a, b) => {
+      if (b.popularity !== a.popularity) {
+        return b.popularity - a.popularity;
+      }
+      return a.distance - b.distance;
+    });
 
-    return new Response(JSON.stringify(items), {
+    // Limit to top 50 results to avoid overwhelming the client
+    const topResults = items.slice(0, 50);
+
+    return new Response(JSON.stringify(topResults), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
