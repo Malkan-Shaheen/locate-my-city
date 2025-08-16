@@ -1,25 +1,58 @@
-// Fetch nearby "places" (amenities/tourism/leisure) from Overpass (OpenStreetMap)
+// Fetch nearby popular "places" (amenities/tourism/leisure) from Overpass (OpenStreetMap)
 function buildOverpassQuery(lat, lon, radius) {
   // radius in meters
+  // Only query for popular/significant place types
   return `
     [out:json][timeout:25];
     (
-      node(around:${radius},${lat},${lon})[amenity];
-      way(around:${radius},${lat},${lon})[amenity];
-      relation(around:${radius},${lat},${lon})[amenity];
-
-      node(around:${radius},${lat},${lon})[tourism];
-      way(around:${radius},${lat},${lon})[tourism];
-      relation(around:${radius},${lat},${lon})[tourism];
-
-      node(around:${radius},${lat},${lon})[leisure];
-      way(around:${radius},${lat},${lon})[leisure];
-      relation(around:${radius},${lat},${lon})[leisure];
+      // Popular amenities
+      node(around:${radius},${lat},${lon})[amenity=restaurant];
+      node(around:${radius},${lat},${lon})[amenity=cafe];
+      node(around:${radius},${lat},${lon})[amenity=bar];
+      node(around:${radius},${lat},${lon})[amenity=pub];
+      node(around:${radius},${lat},${lon})[amenity=fast_food];
+      node(around:${radius},${lat},${lon})[amenity=ice_cream];
+      node(around:${radius},${lat},${lon})[amenity=bank];
+      node(around:${radius},${lat},${lon})[amenity=atm];
+      node(around:${radius},${lat},${lon})[amenity=pharmacy];
+      node(around:${radius},${lat},${lon})[amenity=hospital];
+      node(around:${radius},${lat},${lon})[amenity=clinic];
+      node(around:${radius},${lat},${lon})[amenity=doctors];
+      node(around:${radius},${lat},${lon})[amenity=cinema];
+      node(around:${radius},${lat},${lon})[amenity=theatre];
+      node(around:${radius},${lat},${lon})[amenity=nightclub];
+      node(around:${radius},${lat},${lon})[amenity=library];
+      node(around:${radius},${lat},${lon})[amenity=place_of_worship];
+      
+      // Tourism attractions
+      node(around:${radius},${lat},${lon})[tourism=attraction];
+      node(around:${radius},${lat},${lon})[tourism=museum];
+      node(around:${radius},${lat},${lon})[tourism=hotel];
+      node(around:${radius},${lat},${lon})[tourism=guest_house];
+      node(around:${radius},${lat},${lon})[tourism=hostel];
+      node(around:${radius},${lat},${lon})[tourism=zoo];
+      node(around:${radius},${lat},${lon})[tourism=aquarium];
+      node(around:${radius},${lat},${lon})[tourism=theme_park];
+      node(around:${radius},${lat},${lon})[tourism=gallery];
+      node(around:${radius},${lat},${lon})[tourism=viewpoint];
+      node(around:${radius},${lat},${lon})[tourism=information];
+      
+      // Leisure activities
+      node(around:${radius},${lat},${lon})[leisure=park];
+      node(around:${radius},${lat},${lon})[leisure=garden];
+      node(around:${radius},${lat},${lon})[leisure=golf_course];
+      node(around:${radius},${lat},${lon})[leisure=sports_center];
+      node(around:${radius},${lat},${lon})[leisure=stadium];
+      node(around:${radius},${lat},${lon})[leisure=swimming_pool];
+      node(around:${radius},${lat},${lon})[leisure=marina];
+      node(around:${radius},${lat},${lon})[leisure=ice_rink];
+      node(around:${radius},${lat},${lon})[leisure=playground];
     );
     out center;
   `;
 }
 
+// Rest of your code remains the same...
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const lat = searchParams.get("lat");
