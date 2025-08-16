@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import Header from "../../components/Header";
 import Footer from "../../components/Footer";
 import "leaflet/dist/leaflet.css";
@@ -109,6 +110,14 @@ function ResultsContent() {
     return mk;
   }, [places, cities]);
 
+  // Function to create a URL-friendly slug from a location name
+  const createSlug = (name) => {
+    return name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+  };
+
   return (
     <>
       <h1 className="title">
@@ -132,35 +141,44 @@ function ResultsContent() {
                   <div className="muted">No places found in this radius.</div>
                 )}
 
-                {places.map((p) => (
-                  <div key={`place-${p.id}`} className="result-section">
-                    <h3 className="result-title">{p.name || "Unnamed place"}</h3>
-                    <dl className="result-meta">
-                      {p.type && (
-                        <>
-                          <dt>Type</dt>
-                          <dd>{p.type}</dd>
-                        </>
-                      )}
-                      {p.distance != null && (
-                        <>
-                          <dt>Distance</dt>
-                          <dd>{p.distance.toFixed(1)} m</dd>
-                        </>
-                      )}
-                      {p.address && (
-                        <>
-                          <dt>Address</dt>
-                          <dd>{p.address}</dd>
-                        </>
-                      )}
-                      <dt>Coords</dt>
-                      <dd>
-                        {p.lat.toFixed(5)}, {p.lon.toFixed(5)}
-                      </dd>
-                    </dl>
-                  </div>
-                ))}
+                {places.map((p) => {
+                  const slug = createSlug(p.name || "Unnamed place");
+                  return (
+                    <Link 
+                      key={`place-${p.id}`} 
+                      href={`/how-far-is-${slug}-from-me`}
+                      className="result-link"
+                    >
+                      <div className="result-section">
+                        <h3 className="result-title">{p.name || "Unnamed place"}</h3>
+                        <dl className="result-meta">
+                          {p.type && (
+                            <>
+                              <dt>Type</dt>
+                              <dd>{p.type}</dd>
+                            </>
+                          )}
+                          {p.distance != null && (
+                            <>
+                              <dt>Distance</dt>
+                              <dd>{p.distance.toFixed(1)} m</dd>
+                            </>
+                          )}
+                          {p.address && (
+                            <>
+                              <dt>Address</dt>
+                              <dd>{p.address}</dd>
+                            </>
+                          )}
+                          <dt>Coords</dt>
+                          <dd>
+                            {p.lat.toFixed(5)}, {p.lon.toFixed(5)}
+                          </dd>
+                        </dl>
+                      </div>
+                    </Link>
+                  );
+                })}
               </div>
             </div>
 
@@ -175,29 +193,38 @@ function ResultsContent() {
                   <div className="muted">No cities/towns found in this radius.</div>
                 )}
 
-                {cities.map((c) => (
-                  <div key={`city-${c.id}`} className="result-section">
-                    <h3 className="result-title">{c.name || "Unnamed settlement"}</h3>
-                    <dl className="result-meta">
-                      {c.place && (
-                        <>
-                          <dt>Place</dt>
-                          <dd>{c.place}</dd>
-                        </>
-                      )}
-                      {c.distance != null && (
-                        <>
-                          <dt>Distance</dt>
-                          <dd>{c.distance.toFixed(1)} m</dd>
-                        </>
-                      )}
-                      <dt>Coords</dt>
-                      <dd>
-                        {c.lat.toFixed(5)}, {c.lon.toFixed(5)}
-                      </dd>
-                    </dl>
-                  </div>
-                ))}
+                {cities.map((c) => {
+                  const slug = createSlug(c.name || "Unnamed settlement");
+                  return (
+                    <Link 
+                      key={`city-${c.id}`} 
+                      href={`/how-far-is-${slug}-from-me`}
+                      className="result-link"
+                    >
+                      <div className="result-section">
+                        <h3 className="result-title">{c.name || "Unnamed settlement"}</h3>
+                        <dl className="result-meta">
+                          {c.place && (
+                            <>
+                              <dt>Place</dt>
+                              <dd>{c.place}</dd>
+                            </>
+                          )}
+                          {c.distance != null && (
+                            <>
+                              <dt>Distance</dt>
+                              <dd>{c.distance.toFixed(1)} m</dd>
+                            </>
+                          )}
+                          <dt>Coords</dt>
+                          <dd>
+                            {c.lat.toFixed(5)}, {c.lon.toFixed(5)}
+                          </dd>
+                        </dl>
+                      </div>
+                    </Link>
+                  );
+                })}
               </div>
             </div>
           </section>
@@ -238,7 +265,9 @@ function ResultsContent() {
         .card-header h2 { font-size: 18px; margin: 0; }
         .badge { font-size: 12px; background: #f3f4f6; border: 1px solid #e5e7eb; padding: 4px 8px; border-radius: 999px; }
         .card-body { padding: 12px 16px; max-height: 480px; overflow: auto; }
-        .result-section { border: 1px solid #f0f0f0; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; background: #fafafa; }
+        .result-link { display: block; text-decoration: none; color: inherit; }
+        .result-section { border: 1px solid #f0f0f0; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; background: #fafafa; transition: all 0.2s ease; }
+        .result-section:hover { background: #f0f0f0; cursor: pointer; }
         .result-title { font-size: 16px; margin: 0 0 6px; }
         .result-meta { display: grid; grid-template-columns: 90px 1fr; gap: 4px 10px; }
         .result-meta dt { color: #6b7280; }
