@@ -8,15 +8,15 @@ function buildOverpassQuery(lat, lon, radius) {
       // Popular amenities
       node(around:${radius},${lat},${lon})[amenity=restaurant];
       node(around:${radius},${lat},${lon})[amenity=cafe];
-      node(around:${radius},${lat},${lon})[amenity=bar];
-      node(around:${radius},${lat},${lon})[amenity=pub];
-      node(around:${radius},${lat},${lon})[amenity=fast_food];
-      node(around:${radius},${lat},${lon})[amenity=ice_cream];
+      // node(around:${radius},${lat},${lon})[amenity=bar];
+      // node(around:${radius},${lat},${lon})[amenity=pub];
+      // node(around:${radius},${lat},${lon})[amenity=fast_food];
+      // node(around:${radius},${lat},${lon})[amenity=ice_cream];
       node(around:${radius},${lat},${lon})[amenity=bank];
       node(around:${radius},${lat},${lon})[amenity=atm];
-      node(around:${radius},${lat},${lon})[amenity=pharmacy];
+      // node(around:${radius},${lat},${lon})[amenity=pharmacy];
       node(around:${radius},${lat},${lon})[amenity=hospital];
-      node(around:${radius},${lat},${lon})[amenity=clinic];
+      // node(around:${radius},${lat},${lon})[amenity=clinic];
       node(around:${radius},${lat},${lon})[amenity=doctors];
       node(around:${radius},${lat},${lon})[amenity=cinema];
       node(around:${radius},${lat},${lon})[amenity=theatre];
@@ -38,21 +38,19 @@ function buildOverpassQuery(lat, lon, radius) {
       node(around:${radius},${lat},${lon})[tourism=information];
       
       // Leisure activities
-      node(around:${radius},${lat},${lon})[leisure=park];
-      node(around:${radius},${lat},${lon})[leisure=garden];
-      node(around:${radius},${lat},${lon})[leisure=golf_course];
-      node(around:${radius},${lat},${lon})[leisure=sports_center];
-      node(around:${radius},${lat},${lon})[leisure=stadium];
-      node(around:${radius},${lat},${lon})[leisure=swimming_pool];
-      node(around:${radius},${lat},${lon})[leisure=marina];
-      node(around:${radius},${lat},${lon})[leisure=ice_rink];
-      node(around:${radius},${lat},${lon})[leisure=playground];
+      // node(around:${radius},${lat},${lon})[leisure=park];
+      // node(around:${radius},${lat},${lon})[leisure=garden];
+      // node(around:${radius},${lat},${lon})[leisure=golf_course];
+      // node(around:${radius},${lat},${lon})[leisure=sports_center];
+      // node(around:${radius},${lat},${lon})[leisure=stadium];
+      // node(around:${radius},${lat},${lon})[leisure=swimming_pool];
+      // node(around:${radius},${lat},${lon})[leisure=marina];
+      // node(around:${radius},${lat},${lon})[leisure=ice_rink];
+      // node(around:${radius},${lat},${lon})[leisure=playground];
     );
     out center;
   `;
 }
-
-// Rest of your code remains the same...
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const lat = searchParams.get("lat");
