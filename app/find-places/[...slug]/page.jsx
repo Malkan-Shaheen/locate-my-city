@@ -29,24 +29,22 @@ const Popup = dynamic(
 const milesToMeters = (mi) => Number(mi) * 1609.344;
 
 function ResultsContent() {
-  
-  // Safely extract parameters with proper fallbacks
   const params = useParams();
-const slugArray = params?.slug || [];
+  const slugArray = params?.slug || [];
 
-// defaults
-let radius = "10";
-let location = "";
+  // defaults
+  let radius = "10";
+  let location = "";
 
-if (slugArray[0]) {
-  const match = slugArray[0].match(/places-(\d+)-miles-from-(.+)/);
-  if (match) {
-    radius = match[1];
-    location = decodeURIComponent(match[2]);
+  if (slugArray[0]) {
+    const match = slugArray[0].match(/places-(\d+)-miles-from-(.+)/);
+    if (match) {
+      radius = match[1];
+      location = decodeURIComponent(match[2]);
+    }
   }
-}
 
-const query = location.trim();
+  const query = location.trim();
   const radiusMeters = useMemo(() => milesToMeters(radius), [radius]);
 
   const [center, setCenter] = useState([31.5204, 74.3587]); // Default to Islamabad
@@ -78,12 +76,12 @@ const query = location.trim();
 
   useEffect(() => {
     let isCancelled = false;
-    
+
     async function fetchData() {
       try {
         setLoading(true);
         setError("");
-        
+
         if (!query) {
           throw new Error("No location provided");
         }
@@ -112,8 +110,38 @@ const query = location.trim();
         const [pData, cData] = await Promise.all([pRes.json(), cRes.json()]);
         if (isCancelled) return;
 
-        setPlaces(pData || []);
-        setCities(cData || []);
+        // ⭐️ Strict filter: Famous landmarks only
+        const famousPlaces = (pData || [])
+          .filter((p) => {
+            const allowedTypes = [
+              "tourist_attraction",
+              "landmark",
+              "museum",
+              "park",
+              "airport",
+              "stadium",
+              "monument",
+            ];
+            return (
+              (p.type && allowedTypes.includes(p.type.toLowerCase())) ||
+              (p.class && allowedTypes.includes(p.class.toLowerCase()))
+            );
+          })
+          .slice(0, 10);
+
+        // ⭐️ Strict filter: Only cities/towns
+        const famousCities = (cData || [])
+          .filter((c) => {
+            const allowedCityTypes = ["city", "town"];
+            return (
+              (c.type && allowedCityTypes.includes(c.type.toLowerCase())) ||
+              (c.class && allowedCityTypes.includes(c.class.toLowerCase()))
+            );
+          })
+          .slice(0, 10);
+
+        setPlaces(famousPlaces);
+        setCities(famousCities);
       } catch (err) {
         if (!isCancelled) {
           setError(err.message || "Something went wrong");
@@ -141,8 +169,8 @@ const query = location.trim();
   const createSlug = (name) => {
     return name
       .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '');
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
   };
 
   return (
@@ -168,8 +196,8 @@ const query = location.trim();
                   <div className="muted">No places found in this radius.</div>
                 ) : (
                   places.map((p) => (
-                    <Link 
-                      key={`place-${p.id}`} 
+                    <Link
+                      key={`place-${p.id}`}
                       href={`/how-far-is-${createSlug(p.name || "Unnamed place")}-from-me`}
                       className="result-link"
                     >
@@ -217,8 +245,8 @@ const query = location.trim();
                   <div className="muted">No cities/towns found in this radius.</div>
                 ) : (
                   cities.map((c) => (
-                    <Link 
-                      key={`city-${c.id}`} 
+                    <Link
+                      key={`city-${c.id}`}
                       href={`/how-far-is-${createSlug(c.name || "Unnamed settlement")}-from-me`}
                       className="result-link"
                     >

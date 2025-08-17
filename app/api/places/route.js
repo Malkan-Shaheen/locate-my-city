@@ -1,24 +1,40 @@
-// Fetch nearby "places" (amenities/tourism/leisure) from Overpass (OpenStreetMap)
 function buildOverpassQuery(lat, lon, radius) {
-  // radius in meters
   return `
-    [out:json][timeout:25];
+    [out:json][timeout:30];
     (
-      node(around:${radius},${lat},${lon})[amenity];
-      way(around:${radius},${lat},${lon})[amenity];
-      relation(around:${radius},${lat},${lon})[amenity];
-
-      node(around:${radius},${lat},${lon})[tourism];
-      way(around:${radius},${lat},${lon})[tourism];
-      relation(around:${radius},${lat},${lon})[tourism];
-
-      node(around:${radius},${lat},${lon})[leisure];
-      way(around:${radius},${lat},${lon})[leisure];
-      relation(around:${radius},${lat},${lon})[leisure];
+      // Only major tourist attractions with Wikipedia/Wikidata references
+      node(around:${radius},${lat},${lon})[tourism=attraction][name][wikipedia];
+      way(around:${radius},${lat},${lon})[tourism=attraction][name][wikipedia];
+      relation(around:${radius},${lat},${lon})[tourism=attraction][name][wikipedia];
+      
+      node(around:${radius},${lat},${lon})[tourism=attraction][name][wikidata];
+      way(around:${radius},${lat},${lon})[tourism=attraction][name][wikidata];
+      relation(around:${radius},${lat},${lon})[tourism=attraction][name][wikidata];
+      
+      // Major landmarks (man-made and natural)
+      node(around:${radius},${lat},${lon})[historic=monument][name];
+      way(around:${radius},${lat},${lon})[historic=monument][name];
+      relation(around:${radius},${lat},${lon})[historic=monument][name];
+      
+      node(around:${radius},${lat},${lon})[natural=peak][name];
+      way(around:${radius},${lat},${lon})[natural=peak][name];
+      relation(around:${radius},${lat},${lon})[natural=peak][name];
+      
+      // Only 4+ star hotels
+      node(around:${radius},${lat},${lon})[tourism=hotel][name][stars>=4];
+      way(around:${radius},${lat},${lon})[tourism=hotel][name][stars>=4];
+      relation(around:${radius},${lat},${lon})[tourism=hotel][name][stars>=4];
+      
+      // Large shopping malls
+      node(around:${radius},${lat},${lon})[shop=mall][name][building_size=large];
+      way(around:${radius},${lat},${lon})[shop=mall][name][building_size=large];
+      relation(around:${radius},${lat},${lon})[shop=mall][name][building_size=large];
     );
     out center;
+    out count;
   `;
 }
+
 
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
