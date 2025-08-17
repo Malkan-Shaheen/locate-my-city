@@ -9,13 +9,16 @@ export default function FindPlacesPage() {
   const [radius, setRadius] = useState("10");
   const router = useRouter();
 
-  const handleSearch = () => {
-    if (!location) {
-      alert("Please enter a location.");
-      return;
-    }
-    router.push(`/results?location=${encodeURIComponent(location)}&radius=${radius}`);
-  };
+ const handleSearch = () => {
+  if (!location) {
+    alert("Please enter a location.");
+    return;
+  }
+
+  const slug = `/places-${radius}-miles-from-${encodeURIComponent(location)}`;
+  router.push(slug);
+};
+
 
   return (
     <div className="page2">

@@ -69,9 +69,15 @@ const nextConfig = {
       source: '/location-to-location',
       destination: '/location-from-location/location-to-location',
     },
-    {
-      source: '/:path*',
-      destination: '/404',
+{
+  source: '/places-:radius-miles-from-:location',
+  destination: '/find-places/places-:radius-miles-from-:location',
+},
+
+
+     {
+       source: '/:path*',
+       destination: '/404',
     },
     ];
   },

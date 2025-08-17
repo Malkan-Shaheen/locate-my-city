@@ -1,11 +1,11 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import Header from "../../components/Header";
-import Footer from "../../components/Footer";
+import Header from "../../../components/Header";
+import Footer from "../../../components/Footer";
 import "leaflet/dist/leaflet.css";
 
 // Dynamically import react-leaflet (avoids SSR issues)
@@ -29,17 +29,36 @@ const Popup = dynamic(
 const milesToMeters = (mi) => Number(mi) * 1609.344;
 
 function ResultsContent() {
-  const searchParams = useSearchParams();
-  const query = searchParams.get("location") || "";
-  const radiusMiles = searchParams.get("radius") || "10";
-  const radiusMeters = useMemo(() => milesToMeters(radiusMiles), [radiusMiles]);
+  
+  // Safely extract parameters with proper fallbacks
+  const params = useParams();
+const slugArray = params?.slug || [];
 
-  const [center, setCenter] = useState([31.5204, 74.3587]);
+// defaults
+let radius = "10";
+let location = "";
+
+if (slugArray[0]) {
+  const match = slugArray[0].match(/places-(\d+)-miles-from-(.+)/);
+  if (match) {
+    radius = match[1];
+    location = decodeURIComponent(match[2]);
+  }
+}
+
+const query = location.trim();
+  const radiusMeters = useMemo(() => milesToMeters(radius), [radius]);
+
+  const [center, setCenter] = useState([31.5204, 74.3587]); // Default to Islamabad
   const [loading, setLoading] = useState(true);
   const [geo, setGeo] = useState(null);
   const [places, setPlaces] = useState([]);
   const [cities, setCities] = useState([]);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    console.log("Route params:", { radius, location, query }); // Debugging
+  }, [radius, location, query]);
 
   useEffect(() => {
     (async () => {
@@ -59,10 +78,17 @@ function ResultsContent() {
 
   useEffect(() => {
     let isCancelled = false;
-    async function run() {
-      setLoading(true);
-      setError("");
+    
+    async function fetchData() {
       try {
+        setLoading(true);
+        setError("");
+        
+        if (!query) {
+          throw new Error("No location provided");
+        }
+
+        // Fetch geocode data
         const geoRes = await fetch(`/api/geocode?query=${encodeURIComponent(query)}`);
         if (!geoRes.ok) throw new Error("Geocoding failed");
         const g = await geoRes.json();
@@ -74,6 +100,7 @@ function ResultsContent() {
         setGeo(g);
         setCenter([lat, lon]);
 
+        // Fetch places and cities in parallel
         const [pRes, cRes] = await Promise.all([
           fetch(`/api/places?lat=${lat}&lon=${lon}&radius=${radiusMeters}`),
           fetch(`/api/cities?lat=${lat}&lon=${lon}&radius=${radiusMeters}`),
@@ -87,17 +114,18 @@ function ResultsContent() {
 
         setPlaces(pData || []);
         setCities(cData || []);
-      } catch (e) {
-        setError(e.message || "Something went wrong");
+      } catch (err) {
+        if (!isCancelled) {
+          setError(err.message || "Something went wrong");
+          console.error("Fetch error:", err);
+        }
       } finally {
         if (!isCancelled) setLoading(false);
       }
     }
-    if (query.trim()) run();
-    else {
-      setLoading(false);
-      setError("No location provided.");
-    }
+
+    fetchData();
+
     return () => {
       isCancelled = true;
     };
@@ -110,7 +138,6 @@ function ResultsContent() {
     return mk;
   }, [places, cities]);
 
-  // Function to create a URL-friendly slug from a location name
   const createSlug = (name) => {
     return name
       .toLowerCase()
@@ -121,7 +148,7 @@ function ResultsContent() {
   return (
     <>
       <h1 className="title">
-        Results near "{query}" within {radiusMiles} miles
+        Results near "{query}" within {radius} miles
       </h1>
 
       {loading && <div className="info">Loading real data…</div>}
@@ -137,16 +164,13 @@ function ResultsContent() {
               </div>
 
               <div className="card-body">
-                {places.length === 0 && (
+                {places.length === 0 ? (
                   <div className="muted">No places found in this radius.</div>
-                )}
-
-                {places.map((p) => {
-                  const slug = createSlug(p.name || "Unnamed place");
-                  return (
+                ) : (
+                  places.map((p) => (
                     <Link 
                       key={`place-${p.id}`} 
-                      href={`/how-far-is-${slug}-from-me`}
+                      href={`/how-far-is-${createSlug(p.name || "Unnamed place")}-from-me`}
                       className="result-link"
                     >
                       <div className="result-section">
@@ -161,7 +185,7 @@ function ResultsContent() {
                           {p.distance != null && (
                             <>
                               <dt>Distance</dt>
-                              <dd>{p.distance.toFixed(1)} m</dd>
+                              <dd>{(p.distance / 1609.344).toFixed(1)} miles</dd>
                             </>
                           )}
                           {p.address && (
@@ -177,8 +201,8 @@ function ResultsContent() {
                         </dl>
                       </div>
                     </Link>
-                  );
-                })}
+                  ))
+                )}
               </div>
             </div>
 
@@ -189,16 +213,13 @@ function ResultsContent() {
               </div>
 
               <div className="card-body">
-                {cities.length === 0 && (
+                {cities.length === 0 ? (
                   <div className="muted">No cities/towns found in this radius.</div>
-                )}
-
-                {cities.map((c) => {
-                  const slug = createSlug(c.name || "Unnamed settlement");
-                  return (
+                ) : (
+                  cities.map((c) => (
                     <Link 
                       key={`city-${c.id}`} 
-                      href={`/how-far-is-${slug}-from-me`}
+                      href={`/how-far-is-${createSlug(c.name || "Unnamed settlement")}-from-me`}
                       className="result-link"
                     >
                       <div className="result-section">
@@ -213,7 +234,7 @@ function ResultsContent() {
                           {c.distance != null && (
                             <>
                               <dt>Distance</dt>
-                              <dd>{c.distance.toFixed(1)} m</dd>
+                              <dd>{(c.distance / 1609.344).toFixed(1)} miles</dd>
                             </>
                           )}
                           <dt>Coords</dt>
@@ -223,8 +244,8 @@ function ResultsContent() {
                         </dl>
                       </div>
                     </Link>
-                  );
-                })}
+                  ))
+                )}
               </div>
             </div>
           </section>
@@ -244,6 +265,8 @@ function ResultsContent() {
                       {m.type || m.place ? <span>{m.type || m.place}</span> : null}
                       <br />
                       {m.address ? <span>{m.address}</span> : null}
+                      <br />
+                      <span>{(m.distance / 1609.344).toFixed(1)} miles away</span>
                     </Popup>
                   </Marker>
                 ))}
