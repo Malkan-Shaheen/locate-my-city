@@ -110,34 +110,23 @@ function ResultsContent() {
         const [pData, cData] = await Promise.all([pRes.json(), cRes.json()]);
         if (isCancelled) return;
 
-        // ⭐️ Strict filter: Famous landmarks only
+        // ⭐️ Filter famous places
         const famousPlaces = (pData || [])
           .filter((p) => {
-            const allowedTypes = [
-              "tourist_attraction",
-              "landmark",
-              "museum",
-              "park",
-              "airport",
-              "stadium",
-              "monument",
-            ];
+            const allowedTypes = ["tourist_attraction", "landmark", "museum", "park", "airport", "stadium", "monument"];
             return (
-              (p.type && allowedTypes.includes(p.type.toLowerCase())) ||
-              (p.class && allowedTypes.includes(p.class.toLowerCase()))
+              (p.importance && p.importance > 0.5) ||
+              (p.population && p.population > 50000) ||
+              (p.type && allowedTypes.includes(p.type.toLowerCase()))
             );
           })
+          .sort((a, b) => (b.population || b.importance || 0) - (a.population || a.importance || 0))
           .slice(0, 10);
 
-        // ⭐️ Strict filter: Only cities/towns
+        // ⭐️ Filter famous cities
         const famousCities = (cData || [])
-          .filter((c) => {
-            const allowedCityTypes = ["city", "town"];
-            return (
-              (c.type && allowedCityTypes.includes(c.type.toLowerCase())) ||
-              (c.class && allowedCityTypes.includes(c.class.toLowerCase()))
-            );
-          })
+          .filter((c) => (c.population && c.population > 100000) || (c.importance && c.importance > 0.5))
+          .sort((a, b) => (b.population || b.importance || 0) - (a.population || a.importance || 0))
           .slice(0, 10);
 
         setPlaces(famousPlaces);
