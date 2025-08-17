@@ -1,20 +1,26 @@
-// Fetch nearby "places" (amenities/tourism/leisure) from Overpass (OpenStreetMap)
 function buildOverpassQuery(lat, lon, radius) {
-  // radius in meters
   return `
     [out:json][timeout:25];
     (
-      node(around:${radius},${lat},${lon})[amenity];
-      way(around:${radius},${lat},${lon})[amenity];
-      relation(around:${radius},${lat},${lon})[amenity];
-
-      node(around:${radius},${lat},${lon})[tourism];
-      way(around:${radius},${lat},${lon})[tourism];
-      relation(around:${radius},${lat},${lon})[tourism];
-
-      node(around:${radius},${lat},${lon})[leisure];
-      way(around:${radius},${lat},${lon})[leisure];
-      relation(around:${radius},${lat},${lon})[leisure];
+      // Major amenities
+      node(around:${radius},${lat},${lon})[amenity~"university|college|hospital|stadium|theatre|museum|library"];
+      way(around:${radius},${lat},${lon})[amenity~"university|college|hospital|stadium|theatre|museum|library"];
+      relation(around:${radius},${lat},${lon})[amenity~"university|college|hospital|stadium|theatre|museum|library"];
+      
+      // Important tourist attractions
+      node(around:${radius},${lat},${lon})[tourism~"attraction|museum|zoo|theme_park|gallery|monument|castle"];
+      way(around:${radius},${lat},${lon})[tourism~"attraction|museum|zoo|theme_park|gallery|monument|castle"];
+      relation(around:${radius},${lat},${lon})[tourism~"attraction|museum|zoo|theme_park|gallery|monument|castle"];
+      
+      // Major leisure facilities
+      node(around:${radius},${lat},${lon})[leisure~"park|nature_reserve|golf_course|marina"];
+      way(around:${radius},${lat},${lon})[leisure~"park|nature_reserve|golf_course|marina"];
+      relation(around:${radius},${lat},${lon})[leisure~"park|nature_reserve|golf_course|marina"];
+      
+      // Landmarks and historic sites
+      node(around:${radius},${lat},${lon})[historic~"monument|castle|fort|tower"];
+      way(around:${radius},${lat},${lon})[historic~"monument|castle|fort|tower"];
+      relation(around:${radius},${lat},${lon})[historic~"monument|castle|fort|tower"];
     );
     out center;
   `;
