@@ -44,6 +44,55 @@ function maxResultsForRadius(miles) {
   return 50;
 }
 
+// ---- helper for chunking large radii ----
+async function callOverpassQuery(q) {
+  const endpoints = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.openstreetmap.ru/api/interpreter",
+  ];
+  for (const ep of endpoints) {
+    try {
+      const r = await fetch(ep, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `data=${encodeURIComponent(q)}`,
+        next: { revalidate: 60 },
+      });
+      if (r.ok) return r.json();
+    } catch (e) {
+      console.error("Overpass failed at", ep, e);
+    }
+  }
+  throw new Error("All Overpass endpoints failed");
+}
+
+async function callOverpassWithChunking(lat, lon, radius, qBuilder) {
+  // if radius ≤ 300km, single query
+  if (radius <= 300000) {
+    const q = qBuilder(lat, lon, radius);
+    return callOverpassQuery(q);
+  }
+
+  // otherwise split into 250km steps
+  const step = 250000;
+  let start = 0;
+  const all = [];
+  while (start < radius) {
+    const end = Math.min(start + step, radius);
+    const q = qBuilder(lat, lon, end);
+    try {
+      const json = await callOverpassQuery(q);
+      if (json?.elements) all.push(...json.elements);
+    } catch (e) {
+      console.warn(`Chunk ${start}-${end} failed`, e);
+    }
+    start = end;
+  }
+  return { elements: all };
+}
+
+// ---- main handler ----
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const lat = searchParams.get("lat");
@@ -54,38 +103,8 @@ export async function GET(req) {
     return new Response(JSON.stringify({ error: "Missing lat/lon/radius" }), { status: 400 });
   }
 
-  const q = buildOverpassQuery(lat, lon, radius);
-
-  async function callOverpass(endpoint) {
-    const r = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `data=${encodeURIComponent(q)}`,
-      next: { revalidate: 60 },
-    });
-    if (!r.ok) throw new Error(`Overpass error ${r.status}`);
-    return r.json();
-  }
-
   try {
-    const endpoints = [
-      "https://overpass-api.de/api/interpreter",
-      "https://overpass.kumi.systems/api/interpreter",
-      "https://overpass.openstreetmap.ru/api/interpreter",
-    ];
-
-    let json;
-    let lastErr;
-    for (const ep of endpoints) {
-      try {
-        json = await callOverpass(ep);
-        if (json) break;
-      } catch (e) {
-        lastErr = e;
-      }
-    }
-    if (!json) throw lastErr || new Error("Overpass failed");
-
+    const json = await callOverpassWithChunking(lat, lon, radius, buildOverpassQuery);
     const elements = json.elements || [];
     const items = elements
       .map((e) => {

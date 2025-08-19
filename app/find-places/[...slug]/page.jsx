@@ -165,7 +165,7 @@ useEffect(() => {
         Results near "{query}" within {radius} miles
       </h1>
 
-      {loading && <div className="info">Loading real data…</div>}
+      {loading && <div className="info">Loading your data…</div>}
       {error && <div className="error">⚠️ {error}</div>}
 
       {!loading && !error && (
