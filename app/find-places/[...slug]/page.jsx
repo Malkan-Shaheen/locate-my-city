@@ -29,28 +29,28 @@ const Popup = dynamic(
 const milesToMeters = (mi) => Number(mi) * 1609.344;
 
 function ResultsContent() {
-  
   // Safely extract parameters with proper fallbacks
   const params = useParams();
-const slugArray = params?.slug || [];
+  const slugArray = params?.slug || [];
 
-// defaults
-let radius = "10";
-let location = "";
+  // defaults
+  let radius = "10";
+  let location = "";
 
-if (slugArray[0]) {
-  const match = slugArray[0].match(/places-(\d+)-miles-from-(.+)/);
-  if (match) {
-    radius = match[1];
-    location = decodeURIComponent(match[2]);
+  if (slugArray[0]) {
+    const match = slugArray[0].match(/places-(\d+)-miles-from-(.+)/);
+    if (match) {
+      radius = match[1];
+      location = decodeURIComponent(match[2]);
+    }
   }
-}
 
-const query = location.trim();
+  const query = location.trim();
   const radiusMeters = useMemo(() => milesToMeters(radius), [radius]);
 
   const [center, setCenter] = useState([31.5204, 74.3587]); // Default to Islamabad
-  const [loading, setLoading] = useState(true);
+  const [loadingPlaces, setLoadingPlaces] = useState(false);
+  const [loadingCities, setLoadingCities] = useState(false);
   const [geo, setGeo] = useState(null);
   const [places, setPlaces] = useState([]);
   const [cities, setCities] = useState([]);
@@ -75,75 +75,78 @@ const query = location.trim();
       });
     })();
   }, []);
-useEffect(() => {
-  let isCancelled = false;
 
-  async function fetchData() {
-    try {
-      setLoading(true);
-      setError("");
+  useEffect(() => {
+    let isCancelled = false;
 
-      if (!query) {
-        throw new Error("No location provided");
+    async function fetchData() {
+      try {
+        setError("");
+
+        if (!query) {
+          throw new Error("No location provided");
+        }
+
+        // Fetch geocode data
+        const geoRes = await fetch(`/api/geocode?query=${encodeURIComponent(query)}`);
+        if (!geoRes.ok) throw new Error("Geocoding failed");
+        const g = await geoRes.json();
+        if (!g?.lat || !g?.lon) throw new Error("Location not found");
+        if (isCancelled) return;
+
+        const lat = Number(g.lat);
+        const lon = Number(g.lon);
+        setGeo(g);
+        setCenter([lat, lon]);
+
+        // Fetch places (async)
+        setLoadingPlaces(true);
+        fetch(`/api/places?lat=${lat}&lon=${lon}&radius=${radiusMeters}`)
+          .then(res => {
+            if (!res.ok) throw new Error("Places fetch failed");
+            return res.json();
+          })
+          .then(data => {
+            if (!isCancelled) setPlaces(data || []);
+          })
+          .catch(err => {
+            if (!isCancelled) console.error("Places fetch error:", err);
+          })
+          .finally(() => {
+            if (!isCancelled) setLoadingPlaces(false);
+          });
+
+        // Fetch cities (async)
+        setLoadingCities(true);
+        fetch(`/api/cities?lat=${lat}&lon=${lon}&radius=${radiusMeters}`)
+          .then(res => {
+            if (!res.ok) throw new Error("Cities fetch failed");
+            return res.json();
+          })
+          .then(data => {
+            if (!isCancelled) setCities(data || []);
+          })
+          .catch(err => {
+            if (!isCancelled) console.error("Cities fetch error:", err);
+          })
+          .finally(() => {
+            if (!isCancelled) setLoadingCities(false);
+          });
+
+      } catch (err) {
+        if (!isCancelled) {
+          setError(err.message || "Something went wrong");
+          console.error("Fetch error:", err);
+        }
       }
-
-      // Fetch geocode data
-      const geoRes = await fetch(`/api/geocode?query=${encodeURIComponent(query)}`);
-      if (!geoRes.ok) throw new Error("Geocoding failed");
-      const g = await geoRes.json();
-      if (!g?.lat || !g?.lon) throw new Error("Location not found");
-      if (isCancelled) return;
-
-      const lat = Number(g.lat);
-      const lon = Number(g.lon);
-      setGeo(g);
-      setCenter([lat, lon]);
-
-      // Fetch places & cities separately (show whichever loads first)
-      fetch(`/api/places?lat=${lat}&lon=${lon}&radius=${radiusMeters}`)
-        .then(res => {
-          if (!res.ok) throw new Error("Places fetch failed");
-          return res.json();
-        })
-        .then(data => {
-          if (!isCancelled) setPlaces(data || []);
-        })
-        .catch(err => {
-          if (!isCancelled) console.error("Places fetch error:", err);
-        });
-
-      fetch(`/api/cities?lat=${lat}&lon=${lon}&radius=${radiusMeters}`)
-        .then(res => {
-          if (!res.ok) throw new Error("Cities fetch failed");
-          return res.json();
-        })
-        .then(data => {
-          if (!isCancelled) setCities(data || []);
-        })
-        .catch(err => {
-          if (!isCancelled) console.error("Cities fetch error:", err);
-        });
-
-      // Ensure loading stops after 3s even if some requests are still pending
-      setTimeout(() => {
-        if (!isCancelled) setLoading(false);
-      }, 3000);
-
-    } catch (err) {
-      if (!isCancelled) {
-        setError(err.message || "Something went wrong");
-        console.error("Fetch error:", err);
-      }
-      setLoading(false);
     }
-  }
 
-  fetchData();
+    fetchData();
 
-  return () => {
-    isCancelled = true;
-  };
-}, [query, radiusMeters]);
+    return () => {
+      isCancelled = true;
+    };
+  }, [query, radiusMeters]);
 
   const allMarkers = useMemo(() => {
     const mk = [];
@@ -165,10 +168,15 @@ useEffect(() => {
         Results near "{query}" within {radius} miles
       </h1>
 
-      {loading && <div className="info">Loading your data…</div>}
+      {(loadingPlaces || loadingCities) && (
+        <div className="info">
+          {loadingPlaces && "Loading places… "}
+          {loadingCities && "Loading cities…"}
+        </div>
+      )}
       {error && <div className="error">⚠️ {error}</div>}
 
-      {!loading && !error && (
+      {!error && (
         <>
           <section className="cards">
             <div className="card">
@@ -178,7 +186,9 @@ useEffect(() => {
               </div>
 
               <div className="card-body">
-                {places.length === 0 ? (
+                {loadingPlaces ? (
+                  <div className="muted">Loading places…</div>
+                ) : places.length === 0 ? (
                   <div className="muted">No places found in this radius.</div>
                 ) : (
                   places.map((p) => (
@@ -227,7 +237,9 @@ useEffect(() => {
               </div>
 
               <div className="card-body">
-                {cities.length === 0 ? (
+                {loadingCities ? (
+                  <div className="muted">Loading cities…</div>
+                ) : cities.length === 0 ? (
                   <div className="muted">No cities/towns found in this radius.</div>
                 ) : (
                   cities.map((c) => (
