@@ -26,6 +26,24 @@ function buildOverpassQuery(lat, lon, radius) {
   `;
 }
 
+function scorePlace(type) {
+  if (/university|college/.test(type)) return 5;
+  if (/hospital/.test(type)) return 5;
+  if (/stadium|theatre|museum/.test(type)) return 4;
+  if (/park|nature_reserve/.test(type)) return 3;
+  return 1;
+}
+
+function maxResultsForRadius(miles) {
+  if (miles <= 10) return 7;
+  if (miles <= 20) return 12;
+  if (miles <= 50) return 20;
+  if (miles <= 100) return 30;
+  if (miles <= 200) return 40;
+  if (miles <= 500) return 50;
+  return 50;
+}
+
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const lat = searchParams.get("lat");
@@ -43,7 +61,6 @@ export async function GET(req) {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: `data=${encodeURIComponent(q)}`,
-      // Cache a little to reduce load; adjust to your needs
       next: { revalidate: 60 },
     });
     if (!r.ok) throw new Error(`Overpass error ${r.status}`);
@@ -51,7 +68,6 @@ export async function GET(req) {
   }
 
   try {
-    // primary + fallback mirrors
     const endpoints = [
       "https://overpass-api.de/api/interpreter",
       "https://overpass.kumi.systems/api/interpreter",
@@ -71,7 +87,6 @@ export async function GET(req) {
     if (!json) throw lastErr || new Error("Overpass failed");
 
     const elements = json.elements || [];
-    // Shape into UI-friendly objects
     const items = elements
       .map((e) => {
         const tags = e.tags || {};
@@ -99,18 +114,21 @@ export async function GET(req) {
       })
       .filter(Boolean);
 
-    // Optional: sort by rough distance from center
-    const cLat = Number(lat),
-      cLon = Number(lon);
+    const cLat = Number(lat), cLon = Number(lon);
     for (const it of items) {
-      // very rough planar distance (ok for sorting)
       const dx = (it.lon - cLon) * 111320 * Math.cos((cLat * Math.PI) / 180);
       const dy = (it.lat - cLat) * 110540;
       it.distance = Math.sqrt(dx * dx + dy * dy);
     }
-    items.sort((a, b) => a.distance - b.distance);
 
-    return new Response(JSON.stringify(items), {
+    items.sort((a, b) =>
+      scorePlace(b.type) - scorePlace(a.type) || a.distance - b.distance
+    );
+
+    const miles = radius / 1609.344;
+    const limited = items.slice(0, maxResultsForRadius(miles));
+
+    return new Response(JSON.stringify(limited), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });

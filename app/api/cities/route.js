@@ -1,14 +1,23 @@
-// Nearby cities/towns/villages via Overpass
 function buildOverpassQuery(lat, lon, radius) {
   return `
     [out:json][timeout:25];
     (
-      node(around:${radius},${lat},${lon})["place"~"city|town|village"];
-      way(around:${radius},${lat},${lon})["place"~"city|town|village"];
-      relation(around:${radius},${lat},${lon})["place"~"city|town|village"];
+      node(around:${radius},${lat},${lon})["place"~"city|town"];
+      way(around:${radius},${lat},${lon})["place"~"city|town"];
+      relation(around:${radius},${lat},${lon})["place"~"city|town"];
     );
     out center;
   `;
+}
+
+function maxResultsForRadius(miles) {
+  if (miles <= 10) return 7;
+  if (miles <= 20) return 12;
+  if (miles <= 50) return 20;
+  if (miles <= 100) return 30;
+  if (miles <= 200) return 40;
+  if (miles <= 500) return 50;
+  return 50;
 }
 
 export async function GET(req) {
@@ -53,26 +62,22 @@ export async function GET(req) {
     if (!json) throw lastErr || new Error("Overpass failed");
 
     const elements = json.elements || [];
-    // Map, dedupe by name, sort by distance
     const tmp = [];
     const seen = new Set();
 
-    const cLat = Number(lat),
-      cLon = Number(lon);
+    const cLat = Number(lat), cLon = Number(lon);
 
     for (const e of elements) {
       const tags = e.tags || {};
       const name = tags.name;
-      const place = tags.place; // city | town | village
+      const place = tags.place; // city | town
       const latNum = e.lat ?? e.center?.lat;
       const lonNum = e.lon ?? e.center?.lon;
       if (!name || latNum == null || lonNum == null) continue;
-
       if (seen.has(name)) continue;
       seen.add(name);
 
-      const ilat = Number(latNum),
-        ilon = Number(lonNum);
+      const ilat = Number(latNum), ilon = Number(lonNum);
       const dx = (ilon - cLon) * 111320 * Math.cos((cLat * Math.PI) / 180);
       const dy = (ilat - cLat) * 110540;
       const distance = Math.sqrt(dx * dx + dy * dy);
@@ -87,9 +92,16 @@ export async function GET(req) {
       });
     }
 
-    tmp.sort((a, b) => a.distance - b.distance);
+    // Prioritize cities over towns
+    tmp.sort((a, b) =>
+      (a.place === "city" && b.place !== "city" ? -1 : b.place === "city" && a.place !== "city" ? 1 : 0) ||
+      a.distance - b.distance
+    );
 
-    return new Response(JSON.stringify(tmp), {
+    const miles = radius / 1609.344;
+    const limited = tmp.slice(0, maxResultsForRadius(miles));
+
+    return new Response(JSON.stringify(limited), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });

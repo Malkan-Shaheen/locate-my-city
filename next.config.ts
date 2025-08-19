@@ -74,7 +74,6 @@ const nextConfig = {
   destination: '/find-places/places-:radius-miles-from-:location',
 },
 
-
      {
        source: '/:path*',
        destination: '/404',

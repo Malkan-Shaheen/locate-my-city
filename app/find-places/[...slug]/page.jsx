@@ -75,61 +75,75 @@ const query = location.trim();
       });
     })();
   }, []);
+useEffect(() => {
+  let isCancelled = false;
 
-  useEffect(() => {
-    let isCancelled = false;
-    
-    async function fetchData() {
-      try {
-        setLoading(true);
-        setError("");
-        
-        if (!query) {
-          throw new Error("No location provided");
-        }
+  async function fetchData() {
+    try {
+      setLoading(true);
+      setError("");
 
-        // Fetch geocode data
-        const geoRes = await fetch(`/api/geocode?query=${encodeURIComponent(query)}`);
-        if (!geoRes.ok) throw new Error("Geocoding failed");
-        const g = await geoRes.json();
-        if (!g?.lat || !g?.lon) throw new Error("Location not found");
-        if (isCancelled) return;
-
-        const lat = Number(g.lat);
-        const lon = Number(g.lon);
-        setGeo(g);
-        setCenter([lat, lon]);
-
-        // Fetch places and cities in parallel
-        const [pRes, cRes] = await Promise.all([
-          fetch(`/api/places?lat=${lat}&lon=${lon}&radius=${radiusMeters}`),
-          fetch(`/api/cities?lat=${lat}&lon=${lon}&radius=${radiusMeters}`),
-        ]);
-
-        if (!pRes.ok) throw new Error("Places fetch failed");
-        if (!cRes.ok) throw new Error("Cities fetch failed");
-
-        const [pData, cData] = await Promise.all([pRes.json(), cRes.json()]);
-        if (isCancelled) return;
-
-        setPlaces(pData || []);
-        setCities(cData || []);
-      } catch (err) {
-        if (!isCancelled) {
-          setError(err.message || "Something went wrong");
-          console.error("Fetch error:", err);
-        }
-      } finally {
-        if (!isCancelled) setLoading(false);
+      if (!query) {
+        throw new Error("No location provided");
       }
+
+      // Fetch geocode data
+      const geoRes = await fetch(`/api/geocode?query=${encodeURIComponent(query)}`);
+      if (!geoRes.ok) throw new Error("Geocoding failed");
+      const g = await geoRes.json();
+      if (!g?.lat || !g?.lon) throw new Error("Location not found");
+      if (isCancelled) return;
+
+      const lat = Number(g.lat);
+      const lon = Number(g.lon);
+      setGeo(g);
+      setCenter([lat, lon]);
+
+      // Fetch places & cities separately (show whichever loads first)
+      fetch(`/api/places?lat=${lat}&lon=${lon}&radius=${radiusMeters}`)
+        .then(res => {
+          if (!res.ok) throw new Error("Places fetch failed");
+          return res.json();
+        })
+        .then(data => {
+          if (!isCancelled) setPlaces(data || []);
+        })
+        .catch(err => {
+          if (!isCancelled) console.error("Places fetch error:", err);
+        });
+
+      fetch(`/api/cities?lat=${lat}&lon=${lon}&radius=${radiusMeters}`)
+        .then(res => {
+          if (!res.ok) throw new Error("Cities fetch failed");
+          return res.json();
+        })
+        .then(data => {
+          if (!isCancelled) setCities(data || []);
+        })
+        .catch(err => {
+          if (!isCancelled) console.error("Cities fetch error:", err);
+        });
+
+      // Ensure loading stops after 3s even if some requests are still pending
+      setTimeout(() => {
+        if (!isCancelled) setLoading(false);
+      }, 3000);
+
+    } catch (err) {
+      if (!isCancelled) {
+        setError(err.message || "Something went wrong");
+        console.error("Fetch error:", err);
+      }
+      setLoading(false);
     }
+  }
 
-    fetchData();
+  fetchData();
 
-    return () => {
-      isCancelled = true;
-    };
-  }, [query, radiusMeters]);
+  return () => {
+    isCancelled = true;
+  };
+}, [query, radiusMeters]);
 
   const allMarkers = useMemo(() => {
     const mk = [];
