@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState, useRef } from "react";
 import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -54,18 +54,16 @@ function ResultsContent() {
   const [geo, setGeo] = useState(null);
 
   // 👇 main states
-  const [places, setPlaces] = useState([]);
-  const [visiblePlaces, setVisiblePlaces] = useState([]); // progressive reveal
-  const [loadingMore, setLoadingMore] = useState(false);
-
-  const [cities, setCities] = useState([]);
+  const [allPlaces, setAllPlaces] = useState([]);
+  const [visiblePlaces, setVisiblePlaces] = useState([]);
+  const [allCities, setAllCities] = useState([]);
+  const [visibleCities, setVisibleCities] = useState([]);
+  const [loadingMorePlaces, setLoadingMorePlaces] = useState(false);
+  const [loadingMoreCities, setLoadingMoreCities] = useState(false);
   const [error, setError] = useState("");
+  const [mapReady, setMapReady] = useState(false);
 
-  useEffect(() => {
-    console.log("Route params:", { radius, location, query }); // Debugging
-  }, [radius, location, query]);
-
-  // configure leaflet icons
+  // Configure leaflet icons
   useEffect(() => {
     (async () => {
       const L = (await import("leaflet")).default;
@@ -79,10 +77,12 @@ function ResultsContent() {
         iconUrl: markerIcon.src || markerIcon,
         shadowUrl: markerShadow.src || markerShadow,
       });
+      
+      setMapReady(true);
     })();
   }, []);
 
-  // fetch geo + places + cities
+  // Fetch geo + places + cities
   useEffect(() => {
     let isCancelled = false;
 
@@ -114,7 +114,11 @@ function ResultsContent() {
             return res.json();
           })
           .then(data => {
-            if (!isCancelled) setPlaces(data || []);
+            if (!isCancelled) {
+              setAllPlaces(data || []);
+              // Show first 5 places immediately
+              setVisiblePlaces(data.slice(0, 5) || []);
+            }
           })
           .catch(err => {
             if (!isCancelled) console.error("Places fetch error:", err);
@@ -131,7 +135,11 @@ function ResultsContent() {
             return res.json();
           })
           .then(data => {
-            if (!isCancelled) setCities(data || []);
+            if (!isCancelled) {
+              setAllCities(data || []);
+              // Show first 5 cities immediately
+              setVisibleCities(data.slice(0, 5) || []);
+            }
           })
           .catch(err => {
             if (!isCancelled) console.error("Cities fetch error:", err);
@@ -155,49 +163,71 @@ function ResultsContent() {
     };
   }, [query, radiusMeters]);
 
-  // 👇 progressive reveal effect
+  // Progressive loading for places
   useEffect(() => {
-    if (places.length > 0) {
-      setVisiblePlaces(places.slice(0, 5));
-
-      if (places.length > 5) {
-        setLoadingMore(true);
-        let index = 5;
-
-        const interval = setInterval(() => {
-          index += 5;
-          setVisiblePlaces(places.slice(0, index));
-          if (index >= places.length) {
-            clearInterval(interval);
-            setLoadingMore(false);
-          }
-        }, 800);
-
-        return () => clearInterval(interval);
-      }
+    if (allPlaces.length > 5) {
+      setLoadingMorePlaces(true);
+      
+      let currentIndex = 5;
+      const totalItems = allPlaces.length;
+      
+      const loadNextBatch = () => {
+        if (currentIndex >= totalItems) {
+          setLoadingMorePlaces(false);
+          return;
+        }
+        
+        const nextBatch = allPlaces.slice(0, currentIndex + 5);
+        setVisiblePlaces(nextBatch);
+        currentIndex += 5;
+        
+        // Schedule next batch
+        setTimeout(loadNextBatch, 800);
+      };
+      
+      // Start loading batches after initial display
+      const timer = setTimeout(loadNextBatch, 1000);
+      
+      return () => clearTimeout(timer);
     }
-  }, [places]);
+  }, [allPlaces]);
 
-  // Create markers for visible places and all cities
+  // Progressive loading for cities
+  useEffect(() => {
+    if (allCities.length > 5) {
+      setLoadingMoreCities(true);
+      
+      let currentIndex = 5;
+      const totalItems = allCities.length;
+      
+      const loadNextBatch = () => {
+        if (currentIndex >= totalItems) {
+          setLoadingMoreCities(false);
+          return;
+        }
+        
+        const nextBatch = allCities.slice(0, currentIndex + 5);
+        setVisibleCities(nextBatch);
+        currentIndex += 5;
+        
+        // Schedule next batch
+        setTimeout(loadNextBatch, 800);
+      };
+      
+      // Start loading batches after initial display
+      const timer = setTimeout(loadNextBatch, 1000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [allCities]);
+
   const allMarkers = useMemo(() => {
-    const mk = [];
-    
-    // Add visible places to markers
-    for (const p of visiblePlaces) {
-      if (p.lat && p.lon) {
-        mk.push({ ...p, kind: "place" });
-      }
-    }
-    
-    // Add all cities to markers
-    for (const c of cities) {
-      if (c.lat && c.lon) {
-        mk.push({ ...c, kind: "city" });
-      }
-    }
-    
-    return mk;
-  }, [visiblePlaces, cities]); // Only update when visiblePlaces or cities change
+  const mk = [];
+  for (const p of allPlaces) if (p.lat && p.lon) mk.push({ ...p, kind: "place" });
+  for (const c of allCities) if (c.lat && c.lon) mk.push({ ...c, kind: "city" });
+  return mk;
+}, [allPlaces, allCities]);
+
 
   const createSlug = (name) => {
     return name
@@ -226,7 +256,7 @@ function ResultsContent() {
             <div className="card">
               <div className="card-header">
                 <h2>Nearby Places</h2>
-                <span className="badge">{places.length}</span>
+                <span className="badge">{allPlaces.length}</span>
               </div>
 
               <div className="card-body">
@@ -271,7 +301,7 @@ function ResultsContent() {
                         </div>
                       </Link>
                     ))}
-                    {loadingMore && <div className="muted">Loading more places…</div>}
+                    {loadingMorePlaces && <div className="muted">Loading more places…</div>}
                   </>
                 )}
               </div>
@@ -280,44 +310,47 @@ function ResultsContent() {
             <div className="card">
               <div className="card-header">
                 <h2>Nearby Cities/Towns</h2>
-                <span className="badge">{cities.length}</span>
+                <span className="badge">{allCities.length}</span>
               </div>
 
               <div className="card-body">
-                {loadingCities ? (
+                {loadingCities && visibleCities.length === 0 ? (
                   <div className="muted">Loading cities…</div>
-                ) : cities.length === 0 ? (
+                ) : visibleCities.length === 0 ? (
                   <div className="muted">No cities/towns found in this radius.</div>
                 ) : (
-                  cities.map((c) => (
-                    <Link 
-                      key={`city-${c.id}`} 
-                      href={`/how-far-is-${createSlug(c.name || "Unnamed settlement")}-from-me`}
-                      className="result-link"
-                    >
-                      <div className="result-section">
-                        <h3 className="result-title">{c.name || "Unnamed settlement"}</h3>
-                        <dl className="result-meta">
-                          {c.place && (
-                            <>
-                              <dt>Place</dt>
-                              <dd>{c.place}</dd>
-                            </>
-                          )}
-                          {c.distance != null && (
-                            <>
-                              <dt>Distance</dt>
-                              <dd>{(c.distance / 1609.344).toFixed(1)} miles</dd>
-                            </>
-                          )}
-                          <dt>Coords</dt>
-                          <dd>
-                            {c.lat.toFixed(5)}, {c.lon.toFixed(5)}
-                          </dd>
-                        </dl>
-                      </div>
-                    </Link>
-                  ))
+                  <>
+                    {visibleCities.map((c) => (
+                      <Link 
+                        key={`city-${c.id}`} 
+                        href={`/how-far-is-${createSlug(c.name || "Unnamed settlement")}-from-me`}
+                        className="result-link"
+                      >
+                        <div className="result-section">
+                          <h3 className="result-title">{c.name || "Unnamed settlement"}</h3>
+                          <dl className="result-meta">
+                            {c.place && (
+                              <>
+                                <dt>Place</dt>
+                                <dd>{c.place}</dd>
+                              </>
+                            )}
+                            {c.distance != null && (
+                              <>
+                                <dt>Distance</dt>
+                                <dd>{(c.distance / 1609.344).toFixed(1)} miles</dd>
+                              </>
+                            )}
+                            <dt>Coords</dt>
+                            <dd>
+                              {c.lat.toFixed(5)}, {c.lon.toFixed(5)}
+                            </dd>
+                          </dl>
+                        </div>
+                      </Link>
+                    ))}
+                    {loadingMoreCities && <div className="muted">Loading more cities…</div>}
+                  </>
                 )}
               </div>
             </div>
@@ -325,25 +358,27 @@ function ResultsContent() {
 
           <section className="map-wrap">
             <div className="map">
-              <MapContainer center={center} zoom={12} style={{ height: "100%", width: "100%" }}>
-                <TileLayer
-                  attribution='&copy; OpenStreetMap contributors'
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
-                {allMarkers.map((m) => (
-                  <Marker key={`${m.kind}-${m.id}`} position={[m.lat, m.lon]}>
-                    <Popup>
-                      <strong>{m.name || (m.kind === "city" ? "Settlement" : "Place")}</strong>
-                      <br />
-                      {m.type || m.place ? <span>{m.type || m.place}</span> : null}
-                      <br />
-                      {m.address ? <span>{m.address}</span> : null}
-                      <br />
-                      <span>{(m.distance / 1609.344).toFixed(1)} miles away</span>
-                    </Popup>
-                  </Marker>
-                ))}
-              </MapContainer>
+              {mapReady && (
+                <MapContainer center={center} zoom={12} style={{ height: "100%", width: "100%" }}>
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  {allMarkers.map((m) => (
+                    <Marker key={`${m.kind}-${m.id}`} position={[m.lat, m.lon]}>
+                      <Popup>
+                        <strong>{m.name || (m.kind === "city" ? "Settlement" : "Place")}</strong>
+                        <br />
+                        {m.type || m.place ? <span>{m.type || m.place}</span> : null}
+                        <br />
+                        {m.address ? <span>{m.address}</span> : null}
+                        <br />
+                        <span>{(m.distance / 1609.344).toFixed(1)} miles away</span>
+                      </Popup>
+                    </Marker>
+                  ))}
+                </MapContainer>
+              )}
             </div>
           </section>
         </>
