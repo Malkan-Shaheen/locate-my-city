@@ -52,7 +52,12 @@ function ResultsContent() {
   const [loadingPlaces, setLoadingPlaces] = useState(false);
   const [loadingCities, setLoadingCities] = useState(false);
   const [geo, setGeo] = useState(null);
+
+  // 👇 main states
   const [places, setPlaces] = useState([]);
+  const [visiblePlaces, setVisiblePlaces] = useState([]); // progressive reveal
+  const [loadingMore, setLoadingMore] = useState(false);
+
   const [cities, setCities] = useState([]);
   const [error, setError] = useState("");
 
@@ -60,6 +65,7 @@ function ResultsContent() {
     console.log("Route params:", { radius, location, query }); // Debugging
   }, [radius, location, query]);
 
+  // configure leaflet icons
   useEffect(() => {
     (async () => {
       const L = (await import("leaflet")).default;
@@ -76,6 +82,7 @@ function ResultsContent() {
     })();
   }, []);
 
+  // fetch geo + places + cities
   useEffect(() => {
     let isCancelled = false;
 
@@ -87,7 +94,7 @@ function ResultsContent() {
           throw new Error("No location provided");
         }
 
-        // Fetch geocode data
+        // Fetch geocode
         const geoRes = await fetch(`/api/geocode?query=${encodeURIComponent(query)}`);
         if (!geoRes.ok) throw new Error("Geocoding failed");
         const g = await geoRes.json();
@@ -99,7 +106,7 @@ function ResultsContent() {
         setGeo(g);
         setCenter([lat, lon]);
 
-        // Fetch places (async)
+        // Fetch places
         setLoadingPlaces(true);
         fetch(`/api/places?lat=${lat}&lon=${lon}&radius=${radiusMeters}`)
           .then(res => {
@@ -116,7 +123,7 @@ function ResultsContent() {
             if (!isCancelled) setLoadingPlaces(false);
           });
 
-        // Fetch cities (async)
+        // Fetch cities
         setLoadingCities(true);
         fetch(`/api/cities?lat=${lat}&lon=${lon}&radius=${radiusMeters}`)
           .then(res => {
@@ -148,12 +155,49 @@ function ResultsContent() {
     };
   }, [query, radiusMeters]);
 
+  // 👇 progressive reveal effect
+  useEffect(() => {
+    if (places.length > 0) {
+      setVisiblePlaces(places.slice(0, 5));
+
+      if (places.length > 5) {
+        setLoadingMore(true);
+        let index = 5;
+
+        const interval = setInterval(() => {
+          index += 5;
+          setVisiblePlaces(places.slice(0, index));
+          if (index >= places.length) {
+            clearInterval(interval);
+            setLoadingMore(false);
+          }
+        }, 800);
+
+        return () => clearInterval(interval);
+      }
+    }
+  }, [places]);
+
+  // Create markers for visible places and all cities
   const allMarkers = useMemo(() => {
     const mk = [];
-    for (const p of places) if (p.lat && p.lon) mk.push({ ...p, kind: "place" });
-    for (const c of cities) if (c.lat && c.lon) mk.push({ ...c, kind: "city" });
+    
+    // Add visible places to markers
+    for (const p of visiblePlaces) {
+      if (p.lat && p.lon) {
+        mk.push({ ...p, kind: "place" });
+      }
+    }
+    
+    // Add all cities to markers
+    for (const c of cities) {
+      if (c.lat && c.lon) {
+        mk.push({ ...c, kind: "city" });
+      }
+    }
+    
     return mk;
-  }, [places, cities]);
+  }, [visiblePlaces, cities]); // Only update when visiblePlaces or cities change
 
   const createSlug = (name) => {
     return name
@@ -186,46 +230,49 @@ function ResultsContent() {
               </div>
 
               <div className="card-body">
-                {loadingPlaces ? (
+                {loadingPlaces && visiblePlaces.length === 0 ? (
                   <div className="muted">Loading places…</div>
-                ) : places.length === 0 ? (
+                ) : visiblePlaces.length === 0 ? (
                   <div className="muted">No places found in this radius.</div>
                 ) : (
-                  places.map((p) => (
-                    <Link 
-                      key={`place-${p.id}`} 
-                      href={`/how-far-is-${createSlug(p.name || "Unnamed place")}-from-me`}
-                      className="result-link"
-                    >
-                      <div className="result-section">
-                        <h3 className="result-title">{p.name || "Unnamed place"}</h3>
-                        <dl className="result-meta">
-                          {p.type && (
-                            <>
-                              <dt>Type</dt>
-                              <dd>{p.type}</dd>
-                            </>
-                          )}
-                          {p.distance != null && (
-                            <>
-                              <dt>Distance</dt>
-                              <dd>{(p.distance / 1609.344).toFixed(1)} miles</dd>
-                            </>
-                          )}
-                          {p.address && (
-                            <>
-                              <dt>Address</dt>
-                              <dd>{p.address}</dd>
-                            </>
-                          )}
-                          <dt>Coords</dt>
-                          <dd>
-                            {p.lat.toFixed(5)}, {p.lon.toFixed(5)}
-                          </dd>
-                        </dl>
-                      </div>
-                    </Link>
-                  ))
+                  <>
+                    {visiblePlaces.map((p) => (
+                      <Link
+                        key={`place-${p.id}`}
+                        href={`/how-far-is-${createSlug(p.name || "Unnamed place")}-from-me`}
+                        className="result-link"
+                      >
+                        <div className="result-section">
+                          <h3 className="result-title">{p.name || "Unnamed place"}</h3>
+                          <dl className="result-meta">
+                            {p.type && (
+                              <>
+                                <dt>Type</dt>
+                                <dd>{p.type}</dd>
+                              </>
+                            )}
+                            {p.distance != null && (
+                              <>
+                                <dt>Distance</dt>
+                                <dd>{(p.distance / 1609.344).toFixed(1)} miles</dd>
+                              </>
+                            )}
+                            {p.address && (
+                              <>
+                                <dt>Address</dt>
+                                <dd>{p.address}</dd>
+                              </>
+                            )}
+                            <dt>Coords</dt>
+                            <dd>
+                              {p.lat.toFixed(5)}, {p.lon.toFixed(5)}
+                            </dd>
+                          </dl>
+                        </div>
+                      </Link>
+                    ))}
+                    {loadingMore && <div className="muted">Loading more places…</div>}
+                  </>
                 )}
               </div>
             </div>
