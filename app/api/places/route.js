@@ -26,12 +26,13 @@ function buildOverpassQuery(lat, lon, radius) {
   `;
 }
 
-function scorePlace(type) {
-  if (/university|college/.test(type)) return 5;
-  if (/hospital/.test(type)) return 5;
-  if (/stadium|theatre|museum/.test(type)) return 4;
-  if (/park|nature_reserve/.test(type)) return 3;
-  return 1;
+// ---- UPDATED scoring function ----
+function scorePlace(tags) {
+  if (tags.wikipedia || tags.wikidata) return 5; // globally notable
+  if (tags.tourism === "attraction" || tags.historic) return 4; // tourist/historic spots
+  if (tags.amenity === "theatre" || tags.amenity === "stadium" || tags.amenity === "museum") return 3;
+  if (tags.leisure === "park" || tags.leisure === "nature_reserve") return 2;
+  return 1; // default
 }
 
 function maxResultsForRadius(miles) {
@@ -121,11 +122,10 @@ export async function GET(req) {
           tags["leisure"] ||
           "Place";
 
-        const type = tags.amenity || tags.tourism || tags.leisure || "";
         return {
           id: `${e.type}/${e.id}`,
           name,
-          type,
+          tags, // keep tags for scoring
           lat: Number(latNum),
           lon: Number(lonNum),
           address: tags["addr:full"] || tags["addr:street"] || null,
@@ -140,8 +140,9 @@ export async function GET(req) {
       it.distance = Math.sqrt(dx * dx + dy * dy);
     }
 
+    // ---- UPDATED sort ----
     items.sort((a, b) =>
-      scorePlace(b.type) - scorePlace(a.type) || a.distance - b.distance
+      scorePlace(b.tags) - scorePlace(a.tags) || a.distance - b.distance
     );
 
     const miles = radius / 1609.344;
