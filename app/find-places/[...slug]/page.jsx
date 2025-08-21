@@ -121,6 +121,63 @@ async function callOverpassWithChunking(lat, lon, radius, qBuilder) {
   return { elements: all };
 }
 
+async function fetchPlacesDirectly(lat, lon, radius, onProgress) {
+  try {
+    const json = await callOverpassWithChunking(lat, lon, radius, buildOverpassQuery);
+    const elements = json.elements || [];
+    
+    const items = elements
+      .map((e) => {
+        const tags = e.tags || {};
+        const latNum = e.lat ?? e.center?.lat;
+        const lonNum = e.lon ?? e.center?.lon;
+        if (latNum == null || lonNum == null) return null;
+
+        const name =
+          tags.name ||
+          tags["addr:housename"] ||
+          tags["amenity"] ||
+          tags["tourism"] ||
+          tags["leisure"] ||
+          "Place";
+
+        // Calculate distance
+        const cLat = Number(lat), cLon = Number(lon);
+        const dx = (Number(lonNum) - cLon) * 111320 * Math.cos((cLat * Math.PI) / 180);
+        const dy = (Number(latNum) - cLat) * 110540;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        const place = {
+          id: `${e.type}/${e.id}`,
+          name,
+          type: tags.amenity || tags.tourism || tags.leisure || tags.historic || "Place",
+          lat: Number(latNum),
+          lon: Number(lonNum),
+          distance,
+          address: tags["addr:full"] || tags["addr:street"] || null,
+          tags, // keep tags for scoring
+        };
+
+        // Send each place as it's processed
+        if (onProgress) onProgress(place);
+        
+        return place;
+      })
+      .filter(Boolean);
+
+    // Sort by score and distance
+    items.sort((a, b) =>
+      scorePlace(b.tags) - scorePlace(a.tags) || a.distance - b.distance
+    );
+
+    const miles = radius / 1609.344;
+    return items.slice(0, maxResultsForRadius(miles));
+  } catch (e) {
+    console.error("Error fetching places:", e);
+    throw new Error("Failed to fetch places: " + e.message);
+  }
+}
+
 function ResultsContent() {
   // Safely extract parameters with proper fallbacks
   const params = useParams();
@@ -148,8 +205,10 @@ function ResultsContent() {
 
   // 👇 main states
   const [allPlaces, setAllPlaces] = useState([]);
+  const [visiblePlaces, setVisiblePlaces] = useState([]);
   const [allCities, setAllCities] = useState([]);
   const [visibleCities, setVisibleCities] = useState([]);
+  const [loadingMorePlaces, setLoadingMorePlaces] = useState(false);
   const [loadingMoreCities, setLoadingMoreCities] = useState(false);
   const [error, setError] = useState("");
   const [mapReady, setMapReady] = useState(false);
@@ -197,69 +256,34 @@ function ResultsContent() {
         setGeo(g);
         setCenter([lat, lon]);
 
-        // Fetch places directly from Overpass API
+        // Fetch places directly (no longer using API endpoint)
         setLoadingPlaces(true);
         
-        // Build and execute Overpass query
-        const overpassQuery = buildOverpassQuery(lat, lon, radiusMeters);
-        const json = await callOverpassWithChunking(lat, lon, radiusMeters, buildOverpassQuery);
+        // Create a temporary array to collect places as they come in
+        const collectedPlaces = [];
         
-        if (isCancelled) return;
-        
-        const elements = json.elements || [];
-        const cLat = Number(lat), cLon = Number(lon);
-        
-        // Process and add places one by one
-        for (const e of elements) {
-          if (isCancelled) break;
-          
-          const tags = e.tags || {};
-          const latNum = e.lat ?? e.center?.lat;
-          const lonNum = e.lon ?? e.center?.lon;
-          if (latNum == null || lonNum == null) continue;
-
-          const name =
-            tags.name ||
-            tags["addr:housename"] ||
-            tags["amenity"] ||
-            tags["tourism"] ||
-            tags["leisure"] ||
-            "Place";
-
-          // Calculate distance
-          const dx = (Number(lonNum) - cLon) * 111320 * Math.cos((cLat * Math.PI) / 180);
-          const dy = (Number(latNum) - cLat) * 110540;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-
-          const place = {
-            id: `${e.type}/${e.id}`,
-            name,
-            type: tags.amenity || tags.tourism || tags.leisure || tags.historic || "Place",
-            lat: Number(latNum),
-            lon: Number(lonNum),
-            distance,
-            address: tags["addr:full"] || tags["addr:street"] || null,
-            tags, // keep tags for scoring
-          };
-
-          // Add place to list immediately
-          setAllPlaces(prev => {
-            const newPlaces = [...prev, place];
-            
-            // Sort by score and distance
-            newPlaces.sort((a, b) =>
-              scorePlace(b.tags) - scorePlace(a.tags) || a.distance - b.distance
-            );
-            
-            // Limit results based on radius
-            const miles = radiusMeters / 1609.344;
-            const maxResults = maxResultsForRadius(miles);
-            
-            return newPlaces.slice(0, maxResults);
-          });
-        }
-
-        setLoadingPlaces(false);
+        fetchPlacesDirectly(lat, lon, radiusMeters, (place) => {
+          if (!isCancelled) {
+            collectedPlaces.push(place);
+            // Update visible places with the new place immediately
+            setVisiblePlaces(prev => [...prev, place]);
+          }
+        })
+        .then(places => {
+          if (!isCancelled) {
+            setAllPlaces(places);
+            // We've already been updating visible places as they come in
+          }
+        })
+        .catch(err => {
+          if (!isCancelled) {
+            console.error("Places fetch error:", err);
+            setError("Failed to load places: " + err.message);
+          }
+        })
+        .finally(() => {
+          if (!isCancelled) setLoadingPlaces(false);
+        });
 
         // Fetch cities (still using API endpoint)
         setLoadingCities(true);
@@ -364,13 +388,13 @@ function ResultsContent() {
               </div>
 
               <div className="card-body">
-                {loadingPlaces && allPlaces.length === 0 ? (
+                {loadingPlaces && visiblePlaces.length === 0 ? (
                   <div className="muted">Loading places…</div>
-                ) : allPlaces.length === 0 ? (
+                ) : visiblePlaces.length === 0 ? (
                   <div className="muted">No places found in this radius.</div>
                 ) : (
                   <>
-                    {allPlaces.map((p) => (
+                    {visiblePlaces.map((p) => (
                       <Link
                         key={`place-${p.id}`}
                         href={`/how-far-is-${createSlug(p.name || "Unnamed place")}-from-me`}
