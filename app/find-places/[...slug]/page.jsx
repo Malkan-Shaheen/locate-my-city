@@ -30,6 +30,7 @@ const milesToMeters = (mi) => Number(mi) * 1609.344;
 
 // Overpass API helper functions
 function buildOverpassQuery(lat, lon, radius) {
+  console.log(`🔄 Building Overpass query for lat:${lat}, lon:${lon}, radius:${radius}m`);
   return `
     [out:json][timeout:25];
     (
@@ -76,112 +77,169 @@ function maxResultsForRadius(miles) {
 }
 
 async function callOverpassQuery(q) {
+  console.log("🌐 Calling Overpass API with query");
   const endpoints = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
     "https://overpass.openstreetmap.ru/api/interpreter",
   ];
+  
   for (const ep of endpoints) {
+    console.log(`🔄 Trying endpoint: ${ep}`);
     try {
       const r = await fetch(ep, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: `data=${encodeURIComponent(q)}`,
       });
-      if (r.ok) return r.json();
+      if (r.ok) {
+        console.log(`✅ Success with endpoint: ${ep}`);
+        return r.json();
+      }
     } catch (e) {
-      console.error("Overpass failed at", ep, e);
+      console.error(`❌ Overpass failed at ${ep}`, e);
     }
   }
   throw new Error("All Overpass endpoints failed");
 }
 
 async function callOverpassWithChunking(lat, lon, radius, qBuilder) {
+  console.log(`📊 Starting Overpass chunking for radius: ${radius}m`);
+  
   // if radius ≤ 300km, single query
   if (radius <= 300000) {
+    console.log("📦 Single query (radius ≤ 300km)");
     const q = qBuilder(lat, lon, radius);
     return callOverpassQuery(q);
   }
 
   // otherwise split into 250km steps
+  console.log("🧩 Splitting into chunked queries");
   const step = 250000;
   let start = 0;
   const all = [];
   while (start < radius) {
     const end = Math.min(start + step, radius);
+    console.log(`📦 Querying chunk ${start}-${end}m`);
     const q = qBuilder(lat, lon, end);
     try {
       const json = await callOverpassQuery(q);
-      if (json?.elements) all.push(...json.elements);
+      if (json?.elements) {
+        console.log(`✅ Chunk ${start}-${end}m returned ${json.elements.length} elements`);
+        all.push(...json.elements);
+      }
     } catch (e) {
-      console.warn(`Chunk ${start}-${end} failed`, e);
+      console.warn(`❌ Chunk ${start}-${end}m failed`, e);
     }
     start = end;
   }
+  console.log(`📊 All chunks complete. Total elements: ${all.length}`);
   return { elements: all };
 }
 
 async function fetchPlacesDirectly(lat, lon, radius, onProgress) {
+  console.log(`📍 Starting to fetch places for lat:${lat}, lon:${lon}, radius:${radius}m`);
   try {
     const json = await callOverpassWithChunking(lat, lon, radius, buildOverpassQuery);
     const elements = json.elements || [];
+    console.log(`📊 Raw elements from Overpass: ${elements.length}`);
     
-    const items = elements
-      .map((e) => {
-        const tags = e.tags || {};
-        const latNum = e.lat ?? e.center?.lat;
-        const lonNum = e.lon ?? e.center?.lon;
-        if (latNum == null || lonNum == null) return null;
+    const items = [];
+for (let i = 0; i < elements.length; i++) {
+  const e = elements[i];
+  console.log(`🔄 Processing element ${i + 1}/${elements.length}: ${e.type}/${e.id}`);
 
-        const name =
-          tags.name ||
-          tags["addr:housename"] ||
-          tags["amenity"] ||
-          tags["tourism"] ||
-          tags["leisure"] ||
-          "Place";
+  const tags = e.tags || {};
+  const latNum = e.lat ?? e.center?.lat;
+  const lonNum = e.lon ?? e.center?.lon;
 
-        // Calculate distance
-        const cLat = Number(lat), cLon = Number(lon);
-        const dx = (Number(lonNum) - cLon) * 111320 * Math.cos((cLat * Math.PI) / 180);
-        const dy = (Number(latNum) - cLat) * 110540;
-        const distance = Math.sqrt(dx * dx + dy * dy);
+  if (latNum == null || lonNum == null) {
+    console.log(`❌ Skipping element ${e.type}/${e.id} - missing coordinates`);
+    continue;
+  }
 
-        const place = {
-          id: `${e.type}/${e.id}`,
-          name,
-          type: tags.amenity || tags.tourism || tags.leisure || tags.historic || "Place",
-          lat: Number(latNum),
-          lon: Number(lonNum),
-          distance,
-          address: tags["addr:full"] || tags["addr:street"] || null,
-          tags, // keep tags for scoring
-        };
+  const name =
+    tags.name ||
+    tags["addr:housename"] ||
+    tags["amenity"] ||
+    tags["tourism"] ||
+    tags["leisure"] ||
+    tags["historic"] ||
+    "Place";
 
-        // Send each place as it's processed
-        if (onProgress) onProgress(place);
-        
-        return place;
-      })
-      .filter(Boolean);
+  const cLat = Number(lat), cLon = Number(lon);
+  const dx = (Number(lonNum) - cLon) * 111320 * Math.cos((cLat * Math.PI) / 180);
+  const dy = (Number(latNum) - cLat) * 110540;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+
+  const place = {
+    id: `${e.type}/${e.id}`,
+    name,
+    type: tags.amenity || tags.tourism || tags.leisure || tags.historic || "Place",
+    lat: Number(latNum),
+    lon: Number(lonNum),
+    distance,
+    address: tags["addr:full"] || tags["addr:street"] || null,
+    tags,
+  };
+
+  console.log(`✅ Processed place: ${place.name} (${place.distance.toFixed(0)}m away)`);
+
+  // send immediately
+  if (onProgress) {
+    console.log(`📤 Sending place to onProgress callback: ${place.name}`);
+    onProgress(place);
+    // 👇 let React update before continuing
+    await new Promise((res) => setTimeout(res, 0));
+  }
+
+  items.push(place);
+}
+
+
+    console.log(`📊 Valid places after filtering: ${items.length}`);
 
     // Sort by score and distance
     items.sort((a, b) =>
       scorePlace(b.tags) - scorePlace(a.tags) || a.distance - b.distance
     );
 
-    const miles = radius / 1609.344;
-    return items.slice(0, maxResultsForRadius(miles));
+  // Sort by score + distance
+items.sort((a, b) =>
+  scorePlace(b.tags) - scorePlace(a.tags) || a.distance - b.distance
+);
+
+// Decide how many results to keep based on radius
+const miles = radius / 1609.344;
+const maxResults = maxResultsForRadius(miles);
+console.log(`📏 Radius: ${miles.toFixed(1)} miles, Max results: ${maxResults}`);
+
+// Trim to top N
+const finalResults = items.slice(0, maxResults);
+
+// Re-stream only those top results
+if (onProgress) {
+  for (const place of finalResults) {
+    onProgress(place);
+  }
+}
+
+console.log(`🎯 Final places to return: ${finalResults.length}`);
+return finalResults;
+
   } catch (e) {
-    console.error("Error fetching places:", e);
+    console.error("❌ Error fetching places:", e);
     throw new Error("Failed to fetch places: " + e.message);
   }
 }
 
 function ResultsContent() {
+  console.log("🔍 ResultsContent component rendering");
+  
   // Safely extract parameters with proper fallbacks
   const params = useParams();
   const slugArray = params?.slug || [];
+  console.log("📋 URL params:", slugArray);
 
   // defaults
   let radius = "10";
@@ -197,6 +255,7 @@ function ResultsContent() {
 
   const query = location.trim();
   const radiusMeters = useMemo(() => milesToMeters(radius), [radius]);
+  console.log(`📊 Search parameters - Location: "${query}", Radius: ${radius} miles (${radiusMeters}m)`);
 
   const [center, setCenter] = useState([31.5204, 74.3587]); // Default to Islamabad
   const [loadingPlaces, setLoadingPlaces] = useState(false);
@@ -213,8 +272,17 @@ function ResultsContent() {
   const [error, setError] = useState("");
   const [mapReady, setMapReady] = useState(false);
 
+  console.log(`📊 Component state - 
+    LoadingPlaces: ${loadingPlaces}, 
+    LoadingCities: ${loadingCities},
+    VisiblePlaces: ${visiblePlaces.length},
+    AllPlaces: ${allPlaces.length},
+    VisibleCities: ${visibleCities.length},
+    AllCities: ${allCities.length}`);
+
   // Configure leaflet icons
   useEffect(() => {
+    console.log("🗺️ Setting up Leaflet map icons");
     (async () => {
       const L = (await import("leaflet")).default;
       const markerIcon2x = (await import("leaflet/dist/images/marker-icon-2x.png")).default;
@@ -229,63 +297,83 @@ function ResultsContent() {
       });
       
       setMapReady(true);
+      console.log("✅ Leaflet icons configured");
     })();
   }, []);
 
   // Fetch geo + places + cities
   useEffect(() => {
+    console.log("🌍 Starting data fetch effect");
     let isCancelled = false;
 
     async function fetchData() {
       try {
+        console.log("🔄 Starting data fetch process");
         setError("");
 
         if (!query) {
+          console.log("❌ No query provided");
           throw new Error("No location provided");
         }
 
         // Fetch geocode
+        console.log(`📍 Geocoding query: "${query}"`);
         const geoRes = await fetch(`/api/geocode?query=${encodeURIComponent(query)}`);
         if (!geoRes.ok) throw new Error("Geocoding failed");
         const g = await geoRes.json();
         if (!g?.lat || !g?.lon) throw new Error("Location not found");
-        if (isCancelled) return;
+        if (isCancelled) {
+          console.log("⚠️ Geocoding response received but component was unmounted");
+          return;
+        }
 
         const lat = Number(g.lat);
         const lon = Number(g.lon);
+        console.log(`✅ Geocoding successful - lat: ${lat}, lon: ${lon}`);
         setGeo(g);
         setCenter([lat, lon]);
 
         // Fetch places directly (no longer using API endpoint)
+        console.log("🔄 Starting places fetch");
         setLoadingPlaces(true);
-        
-        // Create a temporary array to collect places as they come in
-        const collectedPlaces = [];
+        setVisiblePlaces([]); // Clear any previous places
         
         fetchPlacesDirectly(lat, lon, radiusMeters, (place) => {
           if (!isCancelled) {
-            collectedPlaces.push(place);
-            // Update visible places with the new place immediately
-            setVisiblePlaces(prev => [...prev, place]);
+            console.log(`📥 Received place via callback: ${place.name}`);
+            // Add each place to visible places as it's received
+            setVisiblePlaces(prev => {
+              console.log(`📋 Adding place to visiblePlaces: ${place.name} (Total: ${prev.length + 1})`);
+              return [...prev, place];
+            });
+          } else {
+            console.log("⚠️ Place callback received but component was unmounted");
           }
         })
         .then(places => {
           if (!isCancelled) {
+            console.log(`✅ All places fetched successfully: ${places.length} total`);
             setAllPlaces(places);
             // We've already been updating visible places as they come in
+          } else {
+            console.log("⚠️ Places fetch completed but component was unmounted");
           }
         })
         .catch(err => {
           if (!isCancelled) {
-            console.error("Places fetch error:", err);
+            console.error("❌ Places fetch error:", err);
             setError("Failed to load places: " + err.message);
           }
         })
         .finally(() => {
-          if (!isCancelled) setLoadingPlaces(false);
+          if (!isCancelled) {
+            setLoadingPlaces(false);
+            console.log("✅ Places loading completed");
+          }
         });
 
         // Fetch cities (still using API endpoint)
+        console.log("🏙️ Starting cities fetch");
         setLoadingCities(true);
         fetch(`/api/cities?lat=${lat}&lon=${lon}&radius=${radiusMeters}`)
           .then(res => {
@@ -294,22 +382,30 @@ function ResultsContent() {
           })
           .then(data => {
             if (!isCancelled) {
+              console.log(`✅ Cities fetched: ${data?.length || 0} total`);
               setAllCities(data || []);
               // Show first 5 cities immediately
-              setVisibleCities(data.slice(0, 5) || []);
+              const initialCities = data.slice(0, 5) || [];
+              console.log(`📋 Setting initial visible cities: ${initialCities.length}`);
+              setVisibleCities(initialCities);
+            } else {
+              console.log("⚠️ Cities fetch completed but component was unmounted");
             }
           })
           .catch(err => {
-            if (!isCancelled) console.error("Cities fetch error:", err);
+            if (!isCancelled) console.error("❌ Cities fetch error:", err);
           })
           .finally(() => {
-            if (!isCancelled) setLoadingCities(false);
+            if (!isCancelled) {
+              setLoadingCities(false);
+              console.log("✅ Cities loading completed");
+            }
           });
 
       } catch (err) {
         if (!isCancelled) {
+          console.error("❌ Fetch error:", err);
           setError(err.message || "Something went wrong");
-          console.error("Fetch error:", err);
         }
       }
     }
@@ -317,45 +413,59 @@ function ResultsContent() {
     fetchData();
 
     return () => {
+      console.log("🧹 Cleaning up data fetch effect");
       isCancelled = true;
     };
   }, [query, radiusMeters]);
 
   // Progressive loading for cities
   useEffect(() => {
+    console.log(`🏙️ Cities progressive loading effect - AllCities: ${allCities.length}, VisibleCities: ${visibleCities.length}`);
+    
     if (allCities.length > 5) {
+      console.log("📈 Starting progressive loading of cities");
       setLoadingMoreCities(true);
       
       let currentIndex = 5;
       const totalItems = allCities.length;
+      console.log(`📊 Will load cities progressively from index ${currentIndex} to ${totalItems}`);
       
       const loadNextBatch = () => {
         if (currentIndex >= totalItems) {
+          console.log("✅ All cities loaded progressively");
           setLoadingMoreCities(false);
           return;
         }
         
         const nextBatch = allCities.slice(0, currentIndex + 5);
+        console.log(`📥 Loading next batch of cities: ${nextBatch.length} total visible`);
         setVisibleCities(nextBatch);
         currentIndex += 5;
         
         // Schedule next batch
+        console.log(`⏰ Scheduling next batch load in 800ms`);
         setTimeout(loadNextBatch, 800);
       };
       
       // Start loading batches after initial display
+      console.log("⏰ Starting progressive loading in 1000ms");
       const timer = setTimeout(loadNextBatch, 1000);
       
-      return () => clearTimeout(timer);
+      return () => {
+        console.log("🧹 Clearing progressive loading timer");
+        clearTimeout(timer);
+      };
     }
   }, [allCities]);
 
   const allMarkers = useMemo(() => {
+    console.log(`📍 Generating map markers - Places: ${visiblePlaces.length}, Cities: ${visibleCities.length}`);
     const mk = [];
-    for (const p of allPlaces) if (p.lat && p.lon) mk.push({ ...p, kind: "place" });
-    for (const c of allCities) if (c.lat && c.lon) mk.push({ ...c, kind: "city" });
+    for (const p of visiblePlaces) if (p.lat && p.lon) mk.push({ ...p, kind: "place" });
+    for (const c of visibleCities) if (c.lat && c.lon) mk.push({ ...c, kind: "city" });
+    console.log(`✅ Total markers: ${mk.length}`);
     return mk;
-  }, [allPlaces, allCities]);
+  }, [visiblePlaces, visibleCities]);
 
   const createSlug = (name) => {
     return name
@@ -364,6 +474,8 @@ function ResultsContent() {
       .replace(/^-|-$/g, '');
   };
 
+  console.log("🎨 Rendering ResultsContent component");
+  
   return (
     <>
       <h1 className="title">
@@ -539,13 +651,14 @@ function ResultsContent() {
 }
 
 export default function ResultsPage() {
+  console.log("📄 ResultsPage component rendering");
   return (
     <div className="page-results">
       <Header />
         <main id="main-content" >
       <section className="hero-banner" aria-labelledby="main-heading" aria-describedby="hero-desc">
           <div className="content-container">
-            <h1 id="main-heading" className="main-heading">Discover Nerby Places</h1>
+            <h1 id="main-heading" className="main-heading">Discover Nearby Places</h1>
             <p id="hero-desc" className="hero-subtitle">Enter a location and search radius to explore cities,
                 landmarks, and hidden gems near you.</p>
           </div>
