@@ -28,6 +28,99 @@ const Popup = dynamic(
 
 const milesToMeters = (mi) => Number(mi) * 1609.344;
 
+// Overpass API helper functions
+function buildOverpassQuery(lat, lon, radius) {
+  return `
+    [out:json][timeout:25];
+    (
+      // Major amenities
+      node(around:${radius},${lat},${lon})[amenity~"university|stadium|theatre|museum|library"];
+      way(around:${radius},${lat},${lon})[amenity~"university|stadium|theatre|museum|library"];
+      relation(around:${radius},${lat},${lon})[amenity~"university|stadium|theatre|museum|library"];
+      
+      // Important tourist attractions
+      node(around:${radius},${lat},${lon})[tourism~"attraction|museum|zoo|theme_park|gallery|monument|castle"];
+      way(around:${radius},${lat},${lon})[tourism~"attraction|museum|zoo|theme_park|gallery|monument|castle"];
+      relation(around:${radius},${lat},${lon})[tourism~"attraction|museum|zoo|theme_park|gallery|monument|castle"];
+      
+      // Major leisure facilities
+      node(around:${radius},${lat},${lon})[leisure~"park|nature_reserve|golf_course|marina"];
+      way(around:${radius},${lat},${lon})[leisure~"park|nature_reserve|golf_course|marina"];
+      relation(around:${radius},${lat},${lon})[leisure~"park|nature_reserve|golf_course|marina"];
+      
+      // Landmarks and historic sites
+      node(around:${radius},${lat},${lon})[historic~"monument|castle|fort|tower"];
+      way(around:${radius},${lat},${lon})[historic~"monument|castle|fort|tower"];
+      relation(around:${radius},${lat},${lon})[historic~"monument|castle|fort|tower"];
+    );
+    out center;
+  `;
+}
+
+function scorePlace(tags) {
+  if (tags.wikipedia || tags.wikidata) return 5; // globally notable
+  if (tags.tourism === "attraction" || tags.historic) return 4; // tourist/historic spots
+  if (tags.amenity === "theatre" || tags.amenity === "stadium" || tags.amenity === "museum") return 3;
+  if (tags.leisure === "park" || tags.leisure === "nature_reserve") return 2;
+  return 1; // default
+}
+
+function maxResultsForRadius(miles) {
+  if (miles <= 10) return 7;
+  if (miles <= 20) return 12;
+  if (miles <= 50) return 20;
+  if (miles <= 100) return 30;
+  if (miles <= 200) return 40;
+  if (miles <= 500) return 50;
+  return 50;
+}
+
+async function callOverpassQuery(q) {
+  const endpoints = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.openstreetmap.ru/api/interpreter",
+  ];
+  for (const ep of endpoints) {
+    try {
+      const r = await fetch(ep, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `data=${encodeURIComponent(q)}`,
+      });
+      if (r.ok) return r.json();
+    } catch (e) {
+      console.error("Overpass failed at", ep, e);
+    }
+  }
+  throw new Error("All Overpass endpoints failed");
+}
+
+async function callOverpassWithChunking(lat, lon, radius, qBuilder) {
+  // if radius ≤ 300km, single query
+  if (radius <= 300000) {
+    const q = qBuilder(lat, lon, radius);
+    return callOverpassQuery(q);
+  }
+
+  // otherwise split into 250km steps
+  const step = 250000;
+  let start = 0;
+  const all = [];
+  while (start < radius) {
+    const end = Math.min(start + step, radius);
+    const q = qBuilder(lat, lon, end);
+    try {
+      const json = await callOverpassQuery(q);
+      if (json?.elements) all.push(...json.elements);
+    } catch (e) {
+      console.warn(`Chunk ${start}-${end} failed`, e);
+    }
+    start = end;
+  }
+  return { elements: all };
+}
+
 function ResultsContent() {
   // Safely extract parameters with proper fallbacks
   const params = useParams();
@@ -55,10 +148,8 @@ function ResultsContent() {
 
   // 👇 main states
   const [allPlaces, setAllPlaces] = useState([]);
-  const [visiblePlaces, setVisiblePlaces] = useState([]);
   const [allCities, setAllCities] = useState([]);
   const [visibleCities, setVisibleCities] = useState([]);
-  const [loadingMorePlaces, setLoadingMorePlaces] = useState(false);
   const [loadingMoreCities, setLoadingMoreCities] = useState(false);
   const [error, setError] = useState("");
   const [mapReady, setMapReady] = useState(false);
@@ -106,28 +197,71 @@ function ResultsContent() {
         setGeo(g);
         setCenter([lat, lon]);
 
-        // Fetch places
+        // Fetch places directly from Overpass API
         setLoadingPlaces(true);
-        fetch(`/api/places?lat=${lat}&lon=${lon}&radius=${radiusMeters}`)
-          .then(res => {
-            if (!res.ok) throw new Error("Places fetch failed");
-            return res.json();
-          })
-          .then(data => {
-            if (!isCancelled) {
-              setAllPlaces(data || []);
-              // Show first 5 places immediately
-              setVisiblePlaces(data.slice(0, 5) || []);
-            }
-          })
-          .catch(err => {
-            if (!isCancelled) console.error("Places fetch error:", err);
-          })
-          .finally(() => {
-            if (!isCancelled) setLoadingPlaces(false);
-          });
+        
+        // Build and execute Overpass query
+        const overpassQuery = buildOverpassQuery(lat, lon, radiusMeters);
+        const json = await callOverpassWithChunking(lat, lon, radiusMeters, buildOverpassQuery);
+        
+        if (isCancelled) return;
+        
+        const elements = json.elements || [];
+        const cLat = Number(lat), cLon = Number(lon);
+        
+        // Process and add places one by one
+        for (const e of elements) {
+          if (isCancelled) break;
+          
+          const tags = e.tags || {};
+          const latNum = e.lat ?? e.center?.lat;
+          const lonNum = e.lon ?? e.center?.lon;
+          if (latNum == null || lonNum == null) continue;
 
-        // Fetch cities
+          const name =
+            tags.name ||
+            tags["addr:housename"] ||
+            tags["amenity"] ||
+            tags["tourism"] ||
+            tags["leisure"] ||
+            "Place";
+
+          // Calculate distance
+          const dx = (Number(lonNum) - cLon) * 111320 * Math.cos((cLat * Math.PI) / 180);
+          const dy = (Number(latNum) - cLat) * 110540;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+
+          const place = {
+            id: `${e.type}/${e.id}`,
+            name,
+            type: tags.amenity || tags.tourism || tags.leisure || tags.historic || "Place",
+            lat: Number(latNum),
+            lon: Number(lonNum),
+            distance,
+            address: tags["addr:full"] || tags["addr:street"] || null,
+            tags, // keep tags for scoring
+          };
+
+          // Add place to list immediately
+          setAllPlaces(prev => {
+            const newPlaces = [...prev, place];
+            
+            // Sort by score and distance
+            newPlaces.sort((a, b) =>
+              scorePlace(b.tags) - scorePlace(a.tags) || a.distance - b.distance
+            );
+            
+            // Limit results based on radius
+            const miles = radiusMeters / 1609.344;
+            const maxResults = maxResultsForRadius(miles);
+            
+            return newPlaces.slice(0, maxResults);
+          });
+        }
+
+        setLoadingPlaces(false);
+
+        // Fetch cities (still using API endpoint)
         setLoadingCities(true);
         fetch(`/api/cities?lat=${lat}&lon=${lon}&radius=${radiusMeters}`)
           .then(res => {
@@ -163,35 +297,6 @@ function ResultsContent() {
     };
   }, [query, radiusMeters]);
 
-  // Progressive loading for places
-  useEffect(() => {
-    if (allPlaces.length > 5) {
-      setLoadingMorePlaces(true);
-      
-      let currentIndex = 5;
-      const totalItems = allPlaces.length;
-      
-      const loadNextBatch = () => {
-        if (currentIndex >= totalItems) {
-          setLoadingMorePlaces(false);
-          return;
-        }
-        
-        const nextBatch = allPlaces.slice(0, currentIndex + 5);
-        setVisiblePlaces(nextBatch);
-        currentIndex += 5;
-        
-        // Schedule next batch
-        setTimeout(loadNextBatch, 800);
-      };
-      
-      // Start loading batches after initial display
-      const timer = setTimeout(loadNextBatch, 1000);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [allPlaces]);
-
   // Progressive loading for cities
   useEffect(() => {
     if (allCities.length > 5) {
@@ -222,12 +327,11 @@ function ResultsContent() {
   }, [allCities]);
 
   const allMarkers = useMemo(() => {
-  const mk = [];
-  for (const p of allPlaces) if (p.lat && p.lon) mk.push({ ...p, kind: "place" });
-  for (const c of allCities) if (c.lat && c.lon) mk.push({ ...c, kind: "city" });
-  return mk;
-}, [allPlaces, allCities]);
-
+    const mk = [];
+    for (const p of allPlaces) if (p.lat && p.lon) mk.push({ ...p, kind: "place" });
+    for (const c of allCities) if (c.lat && c.lon) mk.push({ ...c, kind: "city" });
+    return mk;
+  }, [allPlaces, allCities]);
 
   const createSlug = (name) => {
     return name
@@ -238,8 +342,6 @@ function ResultsContent() {
 
   return (
     <>
-  
-
       <h1 className="title">
         Results near "{query}" within {radius} miles
       </h1>
@@ -262,13 +364,13 @@ function ResultsContent() {
               </div>
 
               <div className="card-body">
-                {loadingPlaces && visiblePlaces.length === 0 ? (
+                {loadingPlaces && allPlaces.length === 0 ? (
                   <div className="muted">Loading places…</div>
-                ) : visiblePlaces.length === 0 ? (
+                ) : allPlaces.length === 0 ? (
                   <div className="muted">No places found in this radius.</div>
                 ) : (
                   <>
-                    {visiblePlaces.map((p) => (
+                    {allPlaces.map((p) => (
                       <Link
                         key={`place-${p.id}`}
                         href={`/how-far-is-${createSlug(p.name || "Unnamed place")}-from-me`}
@@ -303,7 +405,7 @@ function ResultsContent() {
                         </div>
                       </Link>
                     ))}
-                    {loadingMorePlaces && <div className="muted">Loading more places…</div>}
+                    {loadingPlaces && <div className="muted">Loading more places…</div>}
                   </>
                 )}
               </div>
