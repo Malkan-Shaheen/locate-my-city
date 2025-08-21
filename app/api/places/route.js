@@ -3,9 +3,9 @@ function buildOverpassQuery(lat, lon, radius) {
     [out:json][timeout:25];
     (
       // Major amenities
-      node(around:${radius},${lat},${lon})[amenity~"university|college|hospital|stadium|theatre|museum|library"];
-      way(around:${radius},${lat},${lon})[amenity~"university|college|hospital|stadium|theatre|museum|library"];
-      relation(around:${radius},${lat},${lon})[amenity~"university|college|hospital|stadium|theatre|museum|library"];
+      node(around:${radius},${lat},${lon})[amenity~"university|stadium|theatre|museum|library"];
+      way(around:${radius},${lat},${lon})[amenity~"university|stadium|theatre|museum|library"];
+      relation(around:${radius},${lat},${lon})[amenity~"university|stadium|theatre|museum|library"];
       
       // Important tourist attractions
       node(around:${radius},${lat},${lon})[tourism~"attraction|museum|zoo|theme_park|gallery|monument|castle"];

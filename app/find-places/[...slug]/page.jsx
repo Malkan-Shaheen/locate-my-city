@@ -238,6 +238,8 @@ function ResultsContent() {
 
   return (
     <>
+  
+
       <h1 className="title">
         Results near "{query}" within {radius} miles
       </h1>
@@ -414,6 +416,14 @@ export default function ResultsPage() {
   return (
     <div className="page-results">
       <Header />
+        <main id="main-content" >
+      <section className="hero-banner" aria-labelledby="main-heading" aria-describedby="hero-desc">
+          <div className="content-container">
+            <h1 id="main-heading" className="main-heading">Discover Nerby Places</h1>
+            <p id="hero-desc" className="hero-subtitle">Enter a location and search radius to explore cities,
+                landmarks, and hidden gems near you.</p>
+          </div>
+        </section></main>
       <main className="container">
         <Suspense fallback={<div className="info">Loading search parameters...</div>}>
           <ResultsContent />
