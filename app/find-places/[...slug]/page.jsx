@@ -38,17 +38,17 @@ function scorePlace(tags) {
   
   // Medium priority: Cultural amenities
   if (tags.amenity === "theatre" || tags.amenity === "stadium" || 
-      tags.amenity === "museum" || tags.amenity === "university") return 7;
+      tags.amenity === "museum" ) return 7;
   
   // Named parks and nature reserves (only if they have a proper name)
-  if ((tags.leisure === "park" || tags.leisure === "nature_reserve") && 
+  if ((tags.leisure === "park" ) && 
       tags.name && tags.name.length > 0) return 6;
   
   // Other leisure facilities
   if (tags.leisure === "golf_course" || tags.leisure === "marina") return 5;
   
   // Low priority: Generic parks without names
-  if (tags.leisure === "park" || tags.leisure === "nature_reserve") return 2;
+  if (tags.leisure === "park" ) return 2;
   
   return 1; // Default low score
 }
@@ -59,9 +59,9 @@ function buildOverpassQuery(lat, lon, radius) {
     [out:json][timeout:25];
     (
       // Major amenities
-      node(around:${radius},${lat},${lon})[amenity~"stadium|theatre|museum|library"];
-      way(around:${radius},${lat},${lon})[amenity~"stadium|theatre|museum|library"];
-      relation(around:${radius},${lat},${lon})[amenity~"stadium|theatre|museum|library"];
+      node(around:${radius},${lat},${lon})[amenity~"stadium|theatre|museum"];
+      way(around:${radius},${lat},${lon})[amenity~"stadium|theatre|museum"];
+      relation(around:${radius},${lat},${lon})[amenity~"stadium|theatre|museum"];
       
       // Important tourist attractions
       node(around:${radius},${lat},${lon})[tourism~"museum|zoo|theme_park|gallery|monument"];
@@ -69,9 +69,9 @@ function buildOverpassQuery(lat, lon, radius) {
       relation(around:${radius},${lat},${lon})[tourism~"museum|zoo|theme_park|gallery|monument"];
       
       // Major leisure facilities (we'll filter parks later)
-      node(around:${radius},${lat},${lon})[leisure~"nature_reserve|golf_course|marina"];
-      way(around:${radius},${lat},${lon})[leisure~"nature_reserve|golf_course|marina"];
-      relation(around:${radius},${lat},${lon})[leisure~"nature_reserve|golf_course|marina"];
+      node(around:${radius},${lat},${lon})[leisure~"golf_course|marina"];
+      way(around:${radius},${lat},${lon})[leisure~"golf_course|marina"];
+      relation(around:${radius},${lat},${lon})[leisure~"golf_course|marina"];
       
       // Landmarks and historic sites
       node(around:${radius},${lat},${lon})[historic~"monumenttower"];
