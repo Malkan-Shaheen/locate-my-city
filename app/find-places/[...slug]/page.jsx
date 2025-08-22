@@ -60,9 +60,9 @@ function buildOverpassQuery(lat, lon, radius) {
     [out:json][timeout:25];
     (
       // Major amenities
-      node(around:${radius},${lat},${lon})[amenity~"university|stadium|theatre|museum|library"];
-      way(around:${radius},${lat},${lon})[amenity~"university|stadium|theatre|museum|library"];
-      relation(around:${radius},${lat},${lon})[amenity~"university|stadium|theatre|museum|library"];
+      node(around:${radius},${lat},${lon})[amenity~"stadium|theatre|museum|library"];
+      way(around:${radius},${lat},${lon})[amenity~"stadium|theatre|museum|library"];
+      relation(around:${radius},${lat},${lon})[amenity~"stadium|theatre|museum|library"];
       
       // Important tourist attractions
       node(around:${radius},${lat},${lon})[tourism~"museum|zoo|theme_park|gallery|monument"];
@@ -205,14 +205,6 @@ async function fetchPlacesDirectly(lat, lon, radius, onProgress) {
 
       // Filter out generic parks without names (low score)
       if (place.score >= 6) {
-        // send immediately
-        if (onProgress) {
-          console.log(`📤 Sending place to onProgress callback: ${place.name}`);
-          onProgress(place);
-          // 👇 let React update before continuing
-          await new Promise((res) => setTimeout(res, 0));
-        }
-
         items.push(place);
       } else {
         console.log(`🚫 Skipping place with low score: ${place.name} (Score: ${place.score})`);
@@ -226,18 +218,18 @@ async function fetchPlacesDirectly(lat, lon, radius, onProgress) {
       b.score - a.score || a.distance - b.distance
     );
 
-    // Decide how many results to keep based on radius
     console.log(`📏 Radius: ${(radius / 1609.344).toFixed(1)} miles, All results: ${items.length}`);
 
-// Return all filtered results (no limit)
-if (onProgress) {
-  for (const place of items) {
-    onProgress(place);
-  }
-}
+    // Send all places to the callback if provided
+    if (onProgress) {
+      console.log("📤 Sending all places to onProgress callback");
+      for (const place of items) {
+        onProgress(place);
+      }
+    }
 
-console.log(`🎯 Final places to return: ${items.length}`);
-return items;
+    console.log(`🎯 Final places to return: ${items.length}`);
+    return items;
 
   } catch (e) {
     console.error("❌ Error fetching places:", e);
@@ -350,39 +342,16 @@ function ResultsContent() {
         setLoadingPlaces(true);
         setVisiblePlaces([]); // Clear any previous places
         
-        fetchPlacesDirectly(lat, lon, radiusMeters, (place) => {
-          if (!isCancelled) {
-            console.log(`📥 Received place via callback: ${place.name}`);
-            // Add each place to visible places as it's received
-            setVisiblePlaces(prev => {
-              console.log(`📋 Adding place to visiblePlaces: ${place.name} (Total: ${prev.length + 1})`);
-              return [...prev, place];
-            });
-          } else {
-            console.log("⚠️ Place callback received but component was unmounted");
-          }
-        })
-        .then(places => {
-          if (!isCancelled) {
-            console.log(`✅ All places fetched successfully: ${places.length} total`);
-            setAllPlaces(places);
-            // We've already been updating visible places as they come in
-          } else {
-            console.log("⚠️ Places fetch completed but component was unmounted");
-          }
-        })
-        .catch(err => {
-          if (!isCancelled) {
-            console.error("❌ Places fetch error:", err);
-            setError("Failed to load places: " + err.message);
-          }
-        })
-        .finally(() => {
-          if (!isCancelled) {
-            setLoadingPlaces(false);
-            console.log("✅ Places loading completed");
-          }
-        });
+        const places = await fetchPlacesDirectly(lat, lon, radiusMeters);
+        if (!isCancelled) {
+          console.log(`✅ All places fetched successfully: ${places.length} total`);
+          setAllPlaces(places);
+          setVisiblePlaces(places); // Set all places at once
+        } else {
+          console.log("⚠️ Places fetch completed but component was unmounted");
+        }
+        
+        setLoadingPlaces(false);
 
         // Fetch cities (still using API endpoint)
         console.log("🏙️ Starting cities fetch");
@@ -394,14 +363,16 @@ function ResultsContent() {
           })
           .then(data => {
             if (!isCancelled) {
-              // Filter out duplicate cities
+              // Filter out duplicate cities using a more robust approach
               const uniqueCities = [];
-              const seenCityNames = new Set();
+              const seenCityIds = new Set();
               
               for (const city of data || []) {
-                const cityName = city.name?.toLowerCase().trim();
-                if (cityName && !seenCityNames.has(cityName)) {
-                  seenCityNames.add(cityName);
+                // Create a unique ID using both name and coordinates to avoid duplicates
+                const cityId = `${city.name?.toLowerCase().trim()}_${city.lat?.toFixed(4)}_${city.lon?.toFixed(4)}`;
+                
+                if (cityId && !seenCityIds.has(cityId)) {
+                  seenCityIds.add(cityId);
                   uniqueCities.push(city);
                 } else {
                   console.log(`🔄 Skipping duplicate city: ${city.name}`);
@@ -419,7 +390,10 @@ function ResultsContent() {
             }
           })
           .catch(err => {
-            if (!isCancelled) console.error("❌ Cities fetch error:", err);
+            if (!isCancelled) {
+              console.error("❌ Cities fetch error:", err);
+              setError("Failed to load cities: " + err.message);
+            }
           })
           .finally(() => {
             if (!isCancelled) {
@@ -448,16 +422,16 @@ function ResultsContent() {
   useEffect(() => {
     console.log(`🏙️ Cities progressive loading effect - AllCities: ${allCities.length}, VisibleCities: ${visibleCities.length}`);
     
-    if (allCities.length > 5) {
+    if (allCities.length > 5 && visibleCities.length < allCities.length) {
       console.log("📈 Starting progressive loading of cities");
       setLoadingMoreCities(true);
       
-      let currentIndex = 5;
+      let currentIndex = visibleCities.length;
       const totalItems = allCities.length;
       console.log(`📊 Will load cities progressively from index ${currentIndex} to ${totalItems}`);
       
       const loadNextBatch = () => {
-        if (currentIndex >= totalItems) {
+        if (currentIndex >= totalItems || isCancelled) {
           console.log("✅ All cities loaded progressively");
           setLoadingMoreCities(false);
           return;
@@ -482,7 +456,7 @@ function ResultsContent() {
         clearTimeout(timer);
       };
     }
-  }, [allCities]);
+  }, [allCities, visibleCities]);
 
   const allMarkers = useMemo(() => {
     console.log(`📍 Generating map markers - Places: ${visiblePlaces.length}, Cities: ${visibleCities.length}`);
@@ -520,11 +494,10 @@ function ResultsContent() {
         <>
           <section className="cards">
             <div className="card">
-              {/* In the JSX return statement, find the Places card header */}
-<div className="card-header">
-  <h2>Nearby Places</h2>
-  <span className="badge">{allPlaces.length}</span> {/* This already shows the total count */}
-</div>
+              <div className="card-header">
+                <h2>Nearby Places</h2>
+                <span className="badge">{allPlaces.length}</span>
+              </div>
 
               <div className="card-body">
                 {loadingPlaces && visiblePlaces.length === 0 ? (
@@ -568,7 +541,6 @@ function ResultsContent() {
                         </div>
                       </Link>
                     ))}
-                    {loadingPlaces && <div className="muted">Loading more places…</div>}
                   </>
                 )}
               </div>
