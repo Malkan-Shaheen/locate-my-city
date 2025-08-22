@@ -42,57 +42,71 @@ export default function DistanceCalculator() {
 
   return (
     <>
-     <Header />
+    <Header />
 <Head>
   <title>Distance Calculator | LocateMyCity</title>
   <meta name="robots" content="index, follow" />
   <link rel="icon" type="image/png" href="/images/cityfav.png" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"
+  />
 </Head>
 
+<main className="main2">
+  <div className="card2">
+    <div className="card-border-top2" />
+    <div className="card-content2">
+      <div className="heading2">
+        <h1>Distance Calculator</h1>
+        <p>Find the exact distance between two locations worldwide.</p>
+      </div>
 
-      <main className="distance-page">
-        <div className="page-title">
-          <h1>Distance Calculator</h1>
-          <p>Find the exact distance between two locations worldwide.</p>
+      <div className="form2">
+        {/* Source Location */}
+        <div className="input-group2">
+          <LocationInput
+            label="Source Location"
+            value={source}
+            onChange={setSource}
+            onPlaceSelect={setSourcePlace}
+            placeholder="Enter address, city, or landmark"
+          />
         </div>
 
-        <div className="distance-container">
-          <div className="distance-form">
-            <LocationInput
-              label="Source Location"
-              value={source}
-              onChange={setSource}
-              onPlaceSelect={setSourcePlace}
-              placeholder="Enter address, city, or landmark"
-            />
-
-            <LocationInput
-              label="Destination Location"
-              value={destination}
-              onChange={setDestination}
-              onPlaceSelect={setDestinationPlace}
-              placeholder="Enter address, city, or landmark"
-            />
-
-            <button 
-              className="calculate-btn" 
-              onClick={handleCalculate} 
-              
-            >
-              {isLoading ? (
-                <span><span className="spinner"></span> Calculating</span>
-              ) : (
-                <>
-                  <span>Calculate Distance</span>
-                  <i className="fas fa-arrow-right" style={{ marginLeft: '8px' }}></i>
-                </>
-              )}
-            </button>
-          </div>
+        {/* Destination Location */}
+        <div className="input-group2">
+          <LocationInput
+            label="Destination Location"
+            value={destination}
+            onChange={setDestination}
+            onPlaceSelect={setDestinationPlace}
+            placeholder="Enter address, city, or landmark"
+          />
         </div>
-      </main>
-      <Footer />
+
+        {/* Button */}
+        <div className="button-wrapper2">
+          <button onClick={handleCalculate}>
+            {isLoading ? (
+              <span>
+                <span className="spinner"></span> Calculating
+              </span>
+            ) : (
+              <>
+                <span>Calculate Distance</span>
+                <i className="fas fa-arrow-right" style={{ marginLeft: "8px" }}></i>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+    <div className="card-border-bottom2" />
+  </div>
+</main>
+<Footer />
+
     </>
   );
 }

@@ -78,92 +78,121 @@ export default function DistanceCalculator() {
 
   return (
     <>
-      <Header />
-      <Head>
-        <title>Distance Calculator | LocateMyCity</title>
-        <link rel="icon" type="image/png" href="/favicon.png" />
-        <meta name="robots" content="index, follow"></meta>
-        <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet" />
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
-      </Head>
+    <Header />
+<Head>
+  <title>Distance Calculator | LocateMyCity</title>
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <meta name="robots" content="index, follow"></meta>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"
+  />
+</Head>
 
-      <main className="distance-page">
-        <div className="floating-elements">
-          <div className="floating-element" style={{ width: '100px', height: '100px', top: '20%', left: '10%', animationDelay: '0s' }}></div>
-          <div className="floating-element" style={{ width: '150px', height: '150px', top: '60%', left: '70%', animationDelay: '2s' }}></div>
-          <div className="floating-element" style={{ width: '80px', height: '80px', top: '30%', left: '80%', animationDelay: '4s' }}></div>
-          <div className="floating-element" style={{ width: '120px', height: '120px', top: '70%', left: '15%', animationDelay: '6s' }}></div>
-        </div>
+<main className="main2">
+  <div className="floating-elements">
+    <div
+      className="floating-element"
+      style={{ width: "100px", height: "100px", top: "20%", left: "10%", animationDelay: "0s" }}
+    ></div>
+    <div
+      className="floating-element"
+      style={{ width: "150px", height: "150px", top: "60%", left: "70%", animationDelay: "2s" }}
+    ></div>
+    <div
+      className="floating-element"
+      style={{ width: "80px", height: "80px", top: "30%", left: "80%", animationDelay: "4s" }}
+    ></div>
+    <div
+      className="floating-element"
+      style={{ width: "120px", height: "120px", top: "70%", left: "15%", animationDelay: "6s" }}
+    ></div>
+  </div>
 
-        <div className="page-title">
-          <h1>Distance Calculator</h1>
-          <p>Find the exact distance between your current location and any destination worldwide.</p>
-        </div>
+  <div className="card2">
+    <div className="card-border-top2" />
+    <div className="card-content2">
+      <div className="heading2">
+        <h1>Distance Calculator</h1>
+        <p>Find the exact distance between your current location and any destination worldwide.</p>
+      </div>
 
-        <div className="distance-container">
-          <div className="distance-form">
-            <div className="form-group">
-              <label htmlFor="destination">Destination</label>
-              <div style={{ position: 'relative' }}>
-                <input
-                  ref={destinationInputRef}
-                  type="text"
-                  id="destination"
-                  className="form-control"
-                  placeholder="Enter address, city, or landmark"
-                  value={destinationInput}
-                  onChange={handleInputChange}
-                  onFocus={() => setShowSuggestions(true)}
-                  onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                  aria-describedby={showSuggestions && suggestions.length > 0 ? "destination-suggestions" : undefined}
-                  aria-expanded={showSuggestions && suggestions.length > 0}
-                  aria-autocomplete="list"
-                  role="combobox"
-                />
-                <button
-                  onClick={() => setShowSuggestions(true)}
-                  aria-label="Show location suggestions"
-                  style={{
-                    position: 'absolute',
-                    right: '10px',
-                    top: '12px',
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: '#4682B4',
-                    fontSize: '1rem',
-                    padding: '5px',
-                    borderRadius: '50%',
-                    transition: 'all 0.3s ease'
-                  }}
-                >
-                  <FaArrowRight />
-                </button>
-                {showSuggestions && suggestions.length > 0 && (
-                  <ul className="suggestions-list" id="destination-suggestions" role="listbox">
-                    {suggestions.map((suggestion, index) => (
-                      <li
-                        key={index}
-                        onClick={() => handleSuggestionClick(suggestion)}
-                        className="suggestion-item"
-                        role="option"
-                        tabIndex={-1}
-                      >
-                        {suggestion.short_name}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-
-            <button className="calculate-btn" onClick={handleCalculate}>
-              <span id="btnText">Calculate Distance</span>
+      <div className="form2">
+        {/* Destination Input */}
+        <div className="input-group2">
+          <label htmlFor="destination">Destination</label>
+          <div className="input-wrapper2" style={{ position: "relative" }}>
+            <input
+              ref={destinationInputRef}
+              type="text"
+              id="destination"
+              placeholder="Enter address, city, or landmark"
+              value={destinationInput}
+              onChange={handleInputChange}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+              aria-describedby={
+                showSuggestions && suggestions.length > 0 ? "destination-suggestions" : undefined
+              }
+              aria-expanded={showSuggestions && suggestions.length > 0}
+              aria-autocomplete="list"
+              role="combobox"
+            />
+            <button
+              onClick={() => setShowSuggestions(true)}
+              aria-label="Show location suggestions"
+              style={{
+                position: "absolute",
+                right: "10px",
+                top: "12px",
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                color: "#4682B4",
+                fontSize: "1rem",
+                padding: "5px",
+                borderRadius: "50%",
+                transition: "all 0.3s ease",
+                display: "none",
+              }}
+            >
+              <FaArrowRight />
             </button>
+            {showSuggestions && suggestions.length > 0 && (
+              <ul className="suggestions-list" id="destination-suggestions" role="listbox">
+                {suggestions.map((suggestion, index) => (
+                  <li
+                    key={index}
+                    onClick={() => handleSuggestionClick(suggestion)}
+                    className="suggestion-item"
+                    role="option"
+                    tabIndex={-1}
+                  >
+                    {suggestion.short_name}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
-      </main>
-      <Footer />
+
+        {/* Button */}
+        <div className="button-wrapper2">
+          <button onClick={handleCalculate}>
+            <span id="btnText">Calculate Distance</span>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div className="card-border-bottom2" />
+  </div>
+</main>
+<Footer />
+
     </>
   );
 }
