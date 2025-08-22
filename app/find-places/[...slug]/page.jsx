@@ -186,7 +186,7 @@ async function fetchPlacesDirectly(lat, lon, radius) {
       };
 
       // Filter out generic parks without names (low score)
-      if (place.score >= 6) {
+      if (place.score >= 8) {
         items.push(place);
       }
     }
