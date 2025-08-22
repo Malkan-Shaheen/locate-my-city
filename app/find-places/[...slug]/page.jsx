@@ -28,6 +28,31 @@ const Popup = dynamic(
 
 const milesToMeters = (mi) => Number(mi) * 1609.344;
 
+// Enhanced place scoring function
+function scorePlace(tags) {
+  // High priority: Wikipedia/Wikidata entries and major attractions
+  if (tags.wikipedia || tags.wikidata) return 10;
+  
+  // Medium-high priority: Specific attraction types
+  if (tags.tourism === "attraction" || tags.historic) return 8;
+  
+  // Medium priority: Cultural amenities
+  if (tags.amenity === "theatre" || tags.amenity === "stadium" || 
+      tags.amenity === "museum" || tags.amenity === "university") return 7;
+  
+  // Named parks and nature reserves (only if they have a proper name)
+  if ((tags.leisure === "park" || tags.leisure === "nature_reserve") && 
+      tags.name && tags.name.length > 0) return 6;
+  
+  // Other leisure facilities
+  if (tags.leisure === "golf_course" || tags.leisure === "marina") return 5;
+  
+  // Low priority: Generic parks without names
+  if (tags.leisure === "park" || tags.leisure === "nature_reserve") return 2;
+  
+  return 1; // Default low score
+}
+
 // Overpass API helper functions
 function buildOverpassQuery(lat, lon, radius) {
   console.log(`🔄 Building Overpass query for lat:${lat}, lon:${lon}, radius:${radius}m`);
@@ -40,40 +65,22 @@ function buildOverpassQuery(lat, lon, radius) {
       relation(around:${radius},${lat},${lon})[amenity~"university|stadium|theatre|museum|library"];
       
       // Important tourist attractions
-      node(around:${radius},${lat},${lon})[tourism~"attraction|museum|zoo|theme_park|gallery|monument|castle"];
-      way(around:${radius},${lat},${lon})[tourism~"attraction|museum|zoo|theme_park|gallery|monument|castle"];
-      relation(around:${radius},${lat},${lon})[tourism~"attraction|museum|zoo|theme_park|gallery|monument|castle"];
+      node(around:${radius},${lat},${lon})[tourism~"museum|zoo|theme_park|gallery|monument"];
+      way(around:${radius},${lat},${lon})[tourism~"museum|zoo|theme_park|gallery|monument"];
+      relation(around:${radius},${lat},${lon})[tourism~"museum|zoo|theme_park|gallery|monument"];
       
-      // Major leisure facilities
-      node(around:${radius},${lat},${lon})[leisure~"park|nature_reserve|golf_course|marina"];
-      way(around:${radius},${lat},${lon})[leisure~"park|nature_reserve|golf_course|marina"];
-      relation(around:${radius},${lat},${lon})[leisure~"park|nature_reserve|golf_course|marina"];
+      // Major leisure facilities (we'll filter parks later)
+      node(around:${radius},${lat},${lon})[leisure~"nature_reserve|golf_course|marina"];
+      way(around:${radius},${lat},${lon})[leisure~"nature_reserve|golf_course|marina"];
+      relation(around:${radius},${lat},${lon})[leisure~"nature_reserve|golf_course|marina"];
       
       // Landmarks and historic sites
-      node(around:${radius},${lat},${lon})[historic~"monument|castle|fort|tower"];
-      way(around:${radius},${lat},${lon})[historic~"monument|castle|fort|tower"];
-      relation(around:${radius},${lat},${lon})[historic~"monument|castle|fort|tower"];
+      node(around:${radius},${lat},${lon})[historic~"monumenttower"];
+      way(around:${radius},${lat},${lon})[historic~"monument|tower"];
+      relation(around:${radius},${lat},${lon})[historic~"monument|tower"];
     );
     out center;
   `;
-}
-
-function scorePlace(tags) {
-  if (tags.wikipedia || tags.wikidata) return 5; // globally notable
-  if (tags.tourism === "attraction" || tags.historic) return 4; // tourist/historic spots
-  if (tags.amenity === "theatre" || tags.amenity === "stadium" || tags.amenity === "museum") return 3;
-  if (tags.leisure === "park" || tags.leisure === "nature_reserve") return 2;
-  return 1; // default
-}
-
-function maxResultsForRadius(miles) {
-  if (miles <= 10) return 7;
-  if (miles <= 20) return 12;
-  if (miles <= 50) return 20;
-  if (miles <= 100) return 30;
-  if (miles <= 200) return 40;
-  if (miles <= 500) return 50;
-  return 50;
 }
 
 async function callOverpassQuery(q) {
@@ -145,87 +152,92 @@ async function fetchPlacesDirectly(lat, lon, radius, onProgress) {
     console.log(`📊 Raw elements from Overpass: ${elements.length}`);
     
     const items = [];
-for (let i = 0; i < elements.length; i++) {
-  const e = elements[i];
-  console.log(`🔄 Processing element ${i + 1}/${elements.length}: ${e.type}/${e.id}`);
+    const seenIds = new Set(); // Track seen place IDs to avoid duplicates
+    
+    for (let i = 0; i < elements.length; i++) {
+      const e = elements[i];
+      console.log(`🔄 Processing element ${i + 1}/${elements.length}: ${e.type}/${e.id}`);
 
-  const tags = e.tags || {};
-  const latNum = e.lat ?? e.center?.lat;
-  const lonNum = e.lon ?? e.center?.lon;
+      const tags = e.tags || {};
+      const latNum = e.lat ?? e.center?.lat;
+      const lonNum = e.lon ?? e.center?.lon;
 
-  if (latNum == null || lonNum == null) {
-    console.log(`❌ Skipping element ${e.type}/${e.id} - missing coordinates`);
-    continue;
-  }
+      if (latNum == null || lonNum == null) {
+        console.log(`❌ Skipping element ${e.type}/${e.id} - missing coordinates`);
+        continue;
+      }
 
-  const name =
-    tags.name ||
-    tags["addr:housename"] ||
-    tags["amenity"] ||
-    tags["tourism"] ||
-    tags["leisure"] ||
-    tags["historic"] ||
-    "Place";
+      const name =
+        tags.name ||
+        tags["addr:housename"] ||
+        tags["amenity"] ||
+        tags["tourism"] ||
+        tags["leisure"] ||
+        tags["historic"] ||
+        "Place";
 
-  const cLat = Number(lat), cLon = Number(lon);
-  const dx = (Number(lonNum) - cLon) * 111320 * Math.cos((cLat * Math.PI) / 180);
-  const dy = (Number(latNum) - cLat) * 110540;
-  const distance = Math.sqrt(dx * dx + dy * dy);
+      // Skip if this is a duplicate
+      const placeId = `${e.type}/${e.id}`;
+      if (seenIds.has(placeId)) {
+        console.log(`🔄 Skipping duplicate place: ${placeId}`);
+        continue;
+      }
+      seenIds.add(placeId);
 
-  const place = {
-    id: `${e.type}/${e.id}`,
-    name,
-    type: tags.amenity || tags.tourism || tags.leisure || tags.historic || "Place",
-    lat: Number(latNum),
-    lon: Number(lonNum),
-    distance,
-    address: tags["addr:full"] || tags["addr:street"] || null,
-    tags,
-  };
+      const cLat = Number(lat), cLon = Number(lon);
+      const dx = (Number(lonNum) - cLon) * 111320 * Math.cos((cLat * Math.PI) / 180);
+      const dy = (Number(latNum) - cLat) * 110540;
+      const distance = Math.sqrt(dx * dx + dy * dy);
 
-  console.log(`✅ Processed place: ${place.name} (${place.distance.toFixed(0)}m away)`);
+      const place = {
+        id: placeId,
+        name,
+        type: tags.amenity || tags.tourism || tags.leisure || tags.historic || "Place",
+        lat: Number(latNum),
+        lon: Number(lonNum),
+        distance,
+        address: tags["addr:full"] || tags["addr:street"] || null,
+        tags,
+        score: scorePlace(tags),
+      };
 
-  // send immediately
-  if (onProgress) {
-    console.log(`📤 Sending place to onProgress callback: ${place.name}`);
-    onProgress(place);
-    // 👇 let React update before continuing
-    await new Promise((res) => setTimeout(res, 0));
-  }
+      console.log(`✅ Processed place: ${place.name} (${place.distance.toFixed(0)}m away), Score: ${place.score}`);
 
-  items.push(place);
-}
+      // Filter out generic parks without names (low score)
+      if (place.score >= 6) {
+        // send immediately
+        if (onProgress) {
+          console.log(`📤 Sending place to onProgress callback: ${place.name}`);
+          onProgress(place);
+          // 👇 let React update before continuing
+          await new Promise((res) => setTimeout(res, 0));
+        }
 
+        items.push(place);
+      } else {
+        console.log(`🚫 Skipping place with low score: ${place.name} (Score: ${place.score})`);
+      }
+    }
 
     console.log(`📊 Valid places after filtering: ${items.length}`);
 
     // Sort by score and distance
     items.sort((a, b) =>
-      scorePlace(b.tags) - scorePlace(a.tags) || a.distance - b.distance
+      b.score - a.score || a.distance - b.distance
     );
 
-  // Sort by score + distance
-items.sort((a, b) =>
-  scorePlace(b.tags) - scorePlace(a.tags) || a.distance - b.distance
-);
+    // Decide how many results to keep based on radius
+    console.log(`📏 Radius: ${(radius / 1609.344).toFixed(1)} miles, All results: ${items.length}`);
 
-// Decide how many results to keep based on radius
-const miles = radius / 1609.344;
-const maxResults = maxResultsForRadius(miles);
-console.log(`📏 Radius: ${miles.toFixed(1)} miles, Max results: ${maxResults}`);
-
-// Trim to top N
-const finalResults = items.slice(0, maxResults);
-
-// Re-stream only those top results
+// Return all filtered results (no limit)
 if (onProgress) {
-  for (const place of finalResults) {
+  for (const place of items) {
     onProgress(place);
   }
 }
 
-console.log(`🎯 Final places to return: ${finalResults.length}`);
-return finalResults;
+console.log(`🎯 Final places to return: ${items.length}`);
+return items;
 
   } catch (e) {
     console.error("❌ Error fetching places:", e);
@@ -382,10 +394,24 @@ function ResultsContent() {
           })
           .then(data => {
             if (!isCancelled) {
-              console.log(`✅ Cities fetched: ${data?.length || 0} total`);
-              setAllCities(data || []);
+              // Filter out duplicate cities
+              const uniqueCities = [];
+              const seenCityNames = new Set();
+              
+              for (const city of data || []) {
+                const cityName = city.name?.toLowerCase().trim();
+                if (cityName && !seenCityNames.has(cityName)) {
+                  seenCityNames.add(cityName);
+                  uniqueCities.push(city);
+                } else {
+                  console.log(`🔄 Skipping duplicate city: ${city.name}`);
+                }
+              }
+              
+              console.log(`✅ Cities fetched: ${uniqueCities.length} unique cities (from ${data?.length || 0} total)`);
+              setAllCities(uniqueCities);
               // Show first 5 cities immediately
-              const initialCities = data.slice(0, 5) || [];
+              const initialCities = uniqueCities.slice(0, 5) || [];
               console.log(`📋 Setting initial visible cities: ${initialCities.length}`);
               setVisibleCities(initialCities);
             } else {
@@ -494,10 +520,11 @@ function ResultsContent() {
         <>
           <section className="cards">
             <div className="card">
-              <div className="card-header">
-                <h2>Nearby Places</h2>
-                <span className="badge">{allPlaces.length}</span>
-              </div>
+              {/* In the JSX return statement, find the Places card header */}
+<div className="card-header">
+  <h2>Nearby Places</h2>
+  <span className="badge">{allPlaces.length}</span> {/* This already shows the total count */}
+</div>
 
               <div className="card-body">
                 {loadingPlaces && visiblePlaces.length === 0 ? (
