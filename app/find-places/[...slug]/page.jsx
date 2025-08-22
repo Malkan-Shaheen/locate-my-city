@@ -474,7 +474,7 @@ function ResultsContent() {
                 {loadingCities && visibleCities.length === 0 ? (
                   <div className="muted">Loading cities…</div>
                 ) : visibleCities.length === 0 ? (
-                  <div className="muted">No cities/towns found in this radius.</div>
+                  <div className="muted">Loading cities...</div>
                 ) : (
                   <>
                     {visibleCities.map((c) => (
