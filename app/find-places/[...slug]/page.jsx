@@ -55,7 +55,6 @@ function scorePlace(tags) {
 
 // Overpass API helper functions
 function buildOverpassQuery(lat, lon, radius) {
-  console.log(`🔄 Building Overpass query for lat:${lat}, lon:${lon}, radius:${radius}m`);
   return `
     [out:json][timeout:25];
     (
@@ -84,7 +83,6 @@ function buildOverpassQuery(lat, lon, radius) {
 }
 
 async function callOverpassQuery(q) {
-  console.log("🌐 Calling Overpass API with query");
   const endpoints = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
@@ -92,7 +90,6 @@ async function callOverpassQuery(q) {
   ];
   
   for (const ep of endpoints) {
-    console.log(`🔄 Trying endpoint: ${ep}`);
     try {
       const r = await fetch(ep, {
         method: "POST",
@@ -100,70 +97,58 @@ async function callOverpassQuery(q) {
         body: `data=${encodeURIComponent(q)}`,
       });
       if (r.ok) {
-        console.log(`✅ Success with endpoint: ${ep}`);
         return r.json();
       }
     } catch (e) {
-      console.error(`❌ Overpass failed at ${ep}`, e);
+      continue;
     }
   }
   throw new Error("All Overpass endpoints failed");
 }
 
 async function callOverpassWithChunking(lat, lon, radius, qBuilder) {
-  console.log(`📊 Starting Overpass chunking for radius: ${radius}m`);
-  
   // if radius ≤ 300km, single query
   if (radius <= 300000) {
-    console.log("📦 Single query (radius ≤ 300km)");
     const q = qBuilder(lat, lon, radius);
     return callOverpassQuery(q);
   }
 
   // otherwise split into 250km steps
-  console.log("🧩 Splitting into chunked queries");
   const step = 250000;
   let start = 0;
   const all = [];
   while (start < radius) {
     const end = Math.min(start + step, radius);
-    console.log(`📦 Querying chunk ${start}-${end}m`);
     const q = qBuilder(lat, lon, end);
     try {
       const json = await callOverpassQuery(q);
       if (json?.elements) {
-        console.log(`✅ Chunk ${start}-${end}m returned ${json.elements.length} elements`);
         all.push(...json.elements);
       }
     } catch (e) {
-      console.warn(`❌ Chunk ${start}-${end}m failed`, e);
+      // Continue with next chunk if one fails
     }
     start = end;
   }
-  console.log(`📊 All chunks complete. Total elements: ${all.length}`);
   return { elements: all };
 }
 
-async function fetchPlacesDirectly(lat, lon, radius, onProgress) {
-  console.log(`📍 Starting to fetch places for lat:${lat}, lon:${lon}, radius:${radius}m`);
+async function fetchPlacesDirectly(lat, lon, radius) {
   try {
     const json = await callOverpassWithChunking(lat, lon, radius, buildOverpassQuery);
     const elements = json.elements || [];
-    console.log(`📊 Raw elements from Overpass: ${elements.length}`);
     
     const items = [];
     const seenIds = new Set(); // Track seen place IDs to avoid duplicates
     
     for (let i = 0; i < elements.length; i++) {
       const e = elements[i];
-      console.log(`🔄 Processing element ${i + 1}/${elements.length}: ${e.type}/${e.id}`);
 
       const tags = e.tags || {};
       const latNum = e.lat ?? e.center?.lat;
       const lonNum = e.lon ?? e.center?.lon;
 
       if (latNum == null || lonNum == null) {
-        console.log(`❌ Skipping element ${e.type}/${e.id} - missing coordinates`);
         continue;
       }
 
@@ -179,7 +164,6 @@ async function fetchPlacesDirectly(lat, lon, radius, onProgress) {
       // Skip if this is a duplicate
       const placeId = `${e.type}/${e.id}`;
       if (seenIds.has(placeId)) {
-        console.log(`🔄 Skipping duplicate place: ${placeId}`);
         continue;
       }
       seenIds.add(placeId);
@@ -201,49 +185,28 @@ async function fetchPlacesDirectly(lat, lon, radius, onProgress) {
         score: scorePlace(tags),
       };
 
-      console.log(`✅ Processed place: ${place.name} (${place.distance.toFixed(0)}m away), Score: ${place.score}`);
-
       // Filter out generic parks without names (low score)
       if (place.score >= 6) {
         items.push(place);
-      } else {
-        console.log(`🚫 Skipping place with low score: ${place.name} (Score: ${place.score})`);
       }
     }
-
-    console.log(`📊 Valid places after filtering: ${items.length}`);
 
     // Sort by score and distance
     items.sort((a, b) =>
       b.score - a.score || a.distance - b.distance
     );
 
-    console.log(`📏 Radius: ${(radius / 1609.344).toFixed(1)} miles, All results: ${items.length}`);
-
-    // Send all places to the callback if provided
-    if (onProgress) {
-      console.log("📤 Sending all places to onProgress callback");
-      for (const place of items) {
-        onProgress(place);
-      }
-    }
-
-    console.log(`🎯 Final places to return: ${items.length}`);
     return items;
 
   } catch (e) {
-    console.error("❌ Error fetching places:", e);
     throw new Error("Failed to fetch places: " + e.message);
   }
 }
 
 function ResultsContent() {
-  console.log("🔍 ResultsContent component rendering");
-  
   // Safely extract parameters with proper fallbacks
   const params = useParams();
   const slugArray = params?.slug || [];
-  console.log("📋 URL params:", slugArray);
 
   // defaults
   let radius = "10";
@@ -259,7 +222,6 @@ function ResultsContent() {
 
   const query = location.trim();
   const radiusMeters = useMemo(() => milesToMeters(radius), [radius]);
-  console.log(`📊 Search parameters - Location: "${query}", Radius: ${radius} miles (${radiusMeters}m)`);
 
   const [center, setCenter] = useState([31.5204, 74.3587]); // Default to Islamabad
   const [loadingPlaces, setLoadingPlaces] = useState(false);
@@ -276,17 +238,8 @@ function ResultsContent() {
   const [error, setError] = useState("");
   const [mapReady, setMapReady] = useState(false);
 
-  console.log(`📊 Component state - 
-    LoadingPlaces: ${loadingPlaces}, 
-    LoadingCities: ${loadingCities},
-    VisiblePlaces: ${visiblePlaces.length},
-    AllPlaces: ${allPlaces.length},
-    VisibleCities: ${visibleCities.length},
-    AllCities: ${allCities.length}`);
-
   // Configure leaflet icons
   useEffect(() => {
-    console.log("🗺️ Setting up Leaflet map icons");
     (async () => {
       const L = (await import("leaflet")).default;
       const markerIcon2x = (await import("leaflet/dist/images/marker-icon-2x.png")).default;
@@ -301,60 +254,48 @@ function ResultsContent() {
       });
       
       setMapReady(true);
-      console.log("✅ Leaflet icons configured");
     })();
   }, []);
 
   // Fetch geo + places + cities
   useEffect(() => {
-    console.log("🌍 Starting data fetch effect");
     let isCancelled = false;
 
     async function fetchData() {
       try {
-        console.log("🔄 Starting data fetch process");
         setError("");
 
         if (!query) {
-          console.log("❌ No query provided");
           throw new Error("No location provided");
         }
 
         // Fetch geocode
-        console.log(`📍 Geocoding query: "${query}"`);
         const geoRes = await fetch(`/api/geocode?query=${encodeURIComponent(query)}`);
         if (!geoRes.ok) throw new Error("Geocoding failed");
         const g = await geoRes.json();
         if (!g?.lat || !g?.lon) throw new Error("Location not found");
         if (isCancelled) {
-          console.log("⚠️ Geocoding response received but component was unmounted");
           return;
         }
 
         const lat = Number(g.lat);
         const lon = Number(g.lon);
-        console.log(`✅ Geocoding successful - lat: ${lat}, lon: ${lon}`);
         setGeo(g);
         setCenter([lat, lon]);
 
-        // Fetch places directly (no longer using API endpoint)
-        console.log("🔄 Starting places fetch");
+        // Fetch places directly
         setLoadingPlaces(true);
         setVisiblePlaces([]); // Clear any previous places
         
         const places = await fetchPlacesDirectly(lat, lon, radiusMeters);
         if (!isCancelled) {
-          console.log(`✅ All places fetched successfully: ${places.length} total`);
           setAllPlaces(places);
-          setVisiblePlaces(places); // Set all places at once
-        } else {
-          console.log("⚠️ Places fetch completed but component was unmounted");
+          setVisiblePlaces(places);
         }
         
         setLoadingPlaces(false);
 
         // Fetch cities (still using API endpoint)
-        console.log("🏙️ Starting cities fetch");
         setLoadingCities(true);
         fetch(`/api/cities?lat=${lat}&lon=${lon}&radius=${radiusMeters}`)
           .then(res => {
@@ -374,37 +315,28 @@ function ResultsContent() {
                 if (cityId && !seenCityIds.has(cityId)) {
                   seenCityIds.add(cityId);
                   uniqueCities.push(city);
-                } else {
-                  console.log(`🔄 Skipping duplicate city: ${city.name}`);
                 }
               }
               
-              console.log(`✅ Cities fetched: ${uniqueCities.length} unique cities (from ${data?.length || 0} total)`);
               setAllCities(uniqueCities);
               // Show first 5 cities immediately
               const initialCities = uniqueCities.slice(0, 5) || [];
-              console.log(`📋 Setting initial visible cities: ${initialCities.length}`);
               setVisibleCities(initialCities);
-            } else {
-              console.log("⚠️ Cities fetch completed but component was unmounted");
             }
           })
           .catch(err => {
             if (!isCancelled) {
-              console.error("❌ Cities fetch error:", err);
               setError("Failed to load cities: " + err.message);
             }
           })
           .finally(() => {
             if (!isCancelled) {
               setLoadingCities(false);
-              console.log("✅ Cities loading completed");
             }
           });
 
       } catch (err) {
         if (!isCancelled) {
-          console.error("❌ Fetch error:", err);
           setError(err.message || "Something went wrong");
         }
       }
@@ -413,57 +345,45 @@ function ResultsContent() {
     fetchData();
 
     return () => {
-      console.log("🧹 Cleaning up data fetch effect");
       isCancelled = true;
     };
   }, [query, radiusMeters]);
 
   // Progressive loading for cities
   useEffect(() => {
-    console.log(`🏙️ Cities progressive loading effect - AllCities: ${allCities.length}, VisibleCities: ${visibleCities.length}`);
-    
     if (allCities.length > 5 && visibleCities.length < allCities.length) {
-      console.log("📈 Starting progressive loading of cities");
       setLoadingMoreCities(true);
       
       let currentIndex = visibleCities.length;
       const totalItems = allCities.length;
-      console.log(`📊 Will load cities progressively from index ${currentIndex} to ${totalItems}`);
       
       const loadNextBatch = () => {
-        if (currentIndex >= totalItems || isCancelled) {
-          console.log("✅ All cities loaded progressively");
+        if (currentIndex >= totalItems) {
           setLoadingMoreCities(false);
           return;
         }
         
         const nextBatch = allCities.slice(0, currentIndex + 5);
-        console.log(`📥 Loading next batch of cities: ${nextBatch.length} total visible`);
         setVisibleCities(nextBatch);
         currentIndex += 5;
         
         // Schedule next batch
-        console.log(`⏰ Scheduling next batch load in 800ms`);
         setTimeout(loadNextBatch, 800);
       };
       
       // Start loading batches after initial display
-      console.log("⏰ Starting progressive loading in 1000ms");
       const timer = setTimeout(loadNextBatch, 1000);
       
       return () => {
-        console.log("🧹 Clearing progressive loading timer");
         clearTimeout(timer);
       };
     }
   }, [allCities, visibleCities]);
 
   const allMarkers = useMemo(() => {
-    console.log(`📍 Generating map markers - Places: ${visiblePlaces.length}, Cities: ${visibleCities.length}`);
     const mk = [];
     for (const p of visiblePlaces) if (p.lat && p.lon) mk.push({ ...p, kind: "place" });
     for (const c of visibleCities) if (c.lat && c.lon) mk.push({ ...c, kind: "city" });
-    console.log(`✅ Total markers: ${mk.length}`);
     return mk;
   }, [visiblePlaces, visibleCities]);
 
@@ -473,8 +393,6 @@ function ResultsContent() {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '');
   };
-
-  console.log("🎨 Rendering ResultsContent component");
   
   return (
     <>
@@ -622,35 +540,11 @@ function ResultsContent() {
           </section>
         </>
       )}
-
-      <style jsx>{`
-        .container { padding: 24px; max-width: 1200px; margin: 0 auto; }
-        .title { font-size: 22px; font-weight: 700; margin-bottom: 16px; }
-        .info { padding: 12px 14px; background: #f6f7fb; border: 1px solid #e5e7eb; border-radius: 10px; }
-        .error { padding: 12px 14px; background: #fff2f2; border: 1px solid #fecaca; border-radius: 10px; color: #b91c1c; }
-        .cards { display: grid; grid-template-columns: 1fr; gap: 16px; }
-        @media (min-width: 992px) { .cards { grid-template-columns: 1fr 1fr; } }
-        .card { background: #fff; border: 1px solid #ececec; border-radius: 16px; box-shadow: 0 6px 18px rgba(0,0,0,0.05); overflow: hidden; }
-        .card-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #f1f1f1; }
-        .card-header h2 { font-size: 18px; margin: 0; }
-        .badge { font-size: 12px; background: #f3f4f6; border: 1px solid #e5e7eb; padding: 4px 8px; border-radius: 999px; }
-        .card-body { padding: 12px 16px; max-height: 480px; overflow: auto; }
-        .result-link { display: block; text-decoration: none; color: inherit; }
-        .result-section { border: 1px solid #f0f0f0; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; background: #fafafa; transition: all 0.2s ease; }
-        .result-section:hover { background: #f0f0f0; cursor: pointer; }
-        .result-title { font-size: 16px; margin: 0 0 6px; }
-        .result-meta { display: grid; grid-template-columns: 90px 1fr; gap: 4px 10px; }
-        .result-meta dt { color: #6b7280; }
-        .result-meta dd { margin: 0; }
-        .map-wrap { margin-top: 18px; }
-        .map { width: 100%; height: 520px; border-radius: 16px; overflow: hidden; border: 1px solid #e5e7eb; }
-      `}</style>
     </>
   );
 }
 
 export default function ResultsPage() {
-  console.log("📄 ResultsPage component rendering");
   return (
     <div className="page-results">
       <Header />
@@ -670,4 +564,4 @@ export default function ResultsPage() {
       <Footer />
     </div>
   );
-}
+} 
