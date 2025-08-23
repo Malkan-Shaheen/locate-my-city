@@ -261,66 +261,34 @@ async function translateCityName(name) {
   }
 }
 // Component to adjust map view to fit the circle
-// Component to adjust map view to fit the circle
 function MapFocusController({ center, radiusMeters }) {
   const map = useMap();
-  const [L, setL] = useState(null);
   
   useEffect(() => {
-    // Wait for Leaflet to be available
-    if (typeof window !== 'undefined' && window.L) {
-      setL(window.L);
-    }
-  }, []);
-  
-  useEffect(() => {
-    if (center && radiusMeters && map && L) {
-      try {
-        // Calculate bounds that include the circle
-        const circle = L.circle(center, { radius: radiusMeters });
-        
-        // Add safety check for getBounds method
-        if (circle && typeof circle.getBounds === 'function') {
+    if (center && radiusMeters && map && typeof window !== 'undefined' && window.L) {
+      // Use a timeout to ensure the map is fully initialized
+      const timer = setTimeout(() => {
+        try {
+          const L = window.L;
+          const circle = L.circle(center, { radius: radiusMeters });
           const bounds = circle.getBounds();
-          map.fitBounds(bounds, { padding: [20, 20] });
+          
+          // Check if bounds are valid before fitting
+          if (bounds.isValid()) {
+            map.fitBounds(bounds, { padding: [20, 20] });
+          }
+        } catch (error) {
+          console.error("Error fitting map bounds:", error);
         }
-      } catch (error) {
-        console.error("Error fitting map bounds:", error);
-        // Fallback to simple zoom and center
-        map.setView(center, 10);
-      }
+      }, 100);
+      
+      return () => clearTimeout(timer);
     }
-  }, [center, radiusMeters, map, L]);
+  }, [center, radiusMeters, map]);
   
   return null;
 }
 
-
-const handleNavigation = async (name, e) => {
-  // Prevent default navigation
-  e.preventDefault();
-  
-  try {
-    // Check if name contains non-ASCII characters (non-English)
-    const isEnglish = /^[\x00-\x7F]*$/.test(name);
-    
-    let englishName = name;
-    
-    // If not English, translate it
-    if (!isEnglish) {
-      englishName = await translateCityName(name);
-    }
-    
-    // Create slug and navigate
-    const slug = createSlug(englishName);
-    window.location.href = `/how-far-is-${slug}-from-me`;
-  } catch (error) {
-    console.error("Navigation error:", error);
-    // Fallback: navigate with original name
-    const slug = createSlug(name);
-    window.location.href = `/how-far-is-${slug}-from-me`;
-  }
-};
 function ResultsContent() {
   // Safely extract parameters with proper fallbacks
   const params = useParams();
@@ -561,7 +529,6 @@ function ResultsContent() {
                         key={`city-${c.id}`} 
                         href={`/how-far-is-${createSlug(c.name)}-from-me`}
                         className="result-link"
-                        onClick={(e) => handleNavigation(c.name, e)}
                       >
                         <div className="result-section">
                           <h3 className="result-title">{c.name}</h3>
@@ -610,7 +577,6 @@ function ResultsContent() {
                         key={`town-${t.id}`} 
                         href={`/how-far-is-${createSlug(t.name)}-from-me`}
                         className="result-link"
-                        onClick={(e) => handleNavigation(c.name, e)}
                       >
                         <div className="result-section">
                           <h3 className="result-title">{t.name}</h3>
