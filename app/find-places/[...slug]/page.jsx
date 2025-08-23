@@ -13,6 +13,10 @@ const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
   { ssr: false }
 );
+const useMap = dynamic(
+  () => import("react-leaflet").then((m) => m.useMap),
+  { ssr: false }
+);
 const TileLayer = dynamic(
   () => import("react-leaflet").then((m) => m.TileLayer),
   { ssr: false }
@@ -256,83 +260,33 @@ async function translateCityName(name) {
     return name; // Fallback to original name
   }
 }
-
-// NEW: Simple MapFocusController that uses a more reliable approach
-function MapFocusController({ center, radiusMeters, map }) {
+// Component to adjust map view to fit the circle
+function MapFocusController({ center, radiusMeters }) {
+  const map = useMap();
+  
   useEffect(() => {
-    if (center && radiusMeters && map) {
+    if (center && radiusMeters && map && typeof window !== 'undefined' && window.L) {
       // Use a timeout to ensure the map is fully initialized
       const timer = setTimeout(() => {
         try {
-          // Calculate bounds manually instead of using circle.getBounds()
-          const lat = center[0];
-          const lon = center[1];
+          const L = window.L;
+          const circle = L.circle(center, { radius: radiusMeters });
+          const bounds = circle.getBounds();
           
-          // Convert radius from meters to degrees (approximate)
-          const latDelta = (radiusMeters / 111320) * (1 / Math.cos(lat * Math.PI / 180));
-          const lonDelta = radiusMeters / 111320;
-          
-          // Create bounds manually
-          const bounds = [
-            [lat - latDelta, lon - lonDelta],
-            [lat + latDelta, lon + lonDelta]
-          ];
-          
-          // Fit the map to these bounds
-          map.fitBounds(bounds, { padding: [20, 20] });
+          // Check if bounds are valid before fitting
+          if (bounds.isValid()) {
+            map.fitBounds(bounds, { padding: [20, 20] });
+          }
         } catch (error) {
           console.error("Error fitting map bounds:", error);
         }
-      }, 300);
+      }, 100);
       
       return () => clearTimeout(timer);
     }
   }, [center, radiusMeters, map]);
   
   return null;
-}
-
-// NEW: Custom Map Wrapper to get the map instance
-function CustomMapWrapper({ center, radiusMeters, children, ...props }) {
-  const [map, setMap] = useState(null);
-  const [mapReady, setMapReady] = useState(false);
-  
-  // Get the map instance once it's available
-  const MapRef = () => {
-    const mapInstance = dynamic(
-      () => import("react-leaflet").then((m) => {
-        const { useMap } = m;
-        return function MapRef() {
-          const map = useMap();
-          useEffect(() => {
-            setMap(map);
-            // Wait for map to be fully initialized
-            const timer = setTimeout(() => {
-              setMapReady(true);
-            }, 100);
-            return () => clearTimeout(timer);
-          }, [map]);
-          return null;
-        };
-      }),
-      { ssr: false }
-    );
-    return mapInstance ? <MapRef /> : null;
-  };
-
-  return (
-    <MapContainer ref={setMap} {...props}>
-      <MapRef />
-      {children}
-      {mapReady && (
-        <MapFocusController 
-          center={center} 
-          radiusMeters={radiusMeters} 
-          map={map} 
-        />
-      )}
-    </MapContainer>
-  );
 }
 
 function ResultsContent() {
@@ -657,12 +611,13 @@ function ResultsContent() {
           <section className="map-wrap">
             <div className="map">
               {mapReady && (
-                <CustomMapWrapper center={center} zoom={10} style={{ height: "100%", width: "100%" }} radiusMeters={radiusMeters}>
+                <MapContainer center={center} zoom={10} style={{ height: "100%", width: "100%" }}>
                   <TileLayer
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                   />
 
+                   <MapFocusController center={center} radiusMeters={radiusMeters} />
                   {/* Search area circle */}
                   <Circle
                     center={center}
@@ -703,7 +658,7 @@ function ResultsContent() {
                       </Popup>
                     </Marker>
                   ))}
-                </CustomMapWrapper>
+                </MapContainer>
               )}
             </div>
           </section>
