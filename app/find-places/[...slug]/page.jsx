@@ -13,6 +13,10 @@ const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
   { ssr: false }
 );
+const useMap = dynamic(
+  () => import("react-leaflet").then((m) => m.useMap),
+  { ssr: false }
+);
 const TileLayer = dynamic(
   () => import("react-leaflet").then((m) => m.TileLayer),
   { ssr: false }
@@ -25,58 +29,33 @@ const Popup = dynamic(
   () => import("react-leaflet").then((m) => m.Popup),
   { ssr: false }
 );
+const Circle = dynamic(
+  () => import("react-leaflet").then((m) => m.Circle),
+  { ssr: false }
+);
 
 const milesToMeters = (mi) => Number(mi) * 1609.344;
 
-// Enhanced place scoring function
-function scorePlace(tags) {
-  // High priority: Wikipedia/Wikidata entries and major attractions
-  if (tags.wikipedia || tags.wikidata) return 10;
-  
-  // Medium-high priority: Specific attraction types
-  if (tags.tourism === "attraction" || tags.historic) return 8;
-  
-  // Medium priority: Cultural amenities
-  if (tags.amenity === "theatre" || tags.amenity === "stadium" || 
-      tags.amenity === "museum" ) return 7;
-  
-  // Named parks and nature reserves (only if they have a proper name)
-  if ((tags.leisure === "park" ) && 
-      tags.name && tags.name.length > 0) return 6;
-  
-  // Other leisure facilities
-  if (tags.leisure === "golf_course" || tags.leisure === "marina") return 5;
-  
-  // Low priority: Generic parks without names
-  if (tags.leisure === "park" ) return 2;
-  
-  return 1; // Default low score
-}
-
 // Overpass API helper functions
-function buildOverpassQuery(lat, lon, radius) {
+function buildCitiesQuery(lat, lon, radius) {
   return `
     [out:json][timeout:25];
     (
-      // Major amenities
-      node(around:${radius},${lat},${lon})[amenity~"stadium|theatre|museum"];
-      way(around:${radius},${lat},${lon})[amenity~"stadium|theatre|museum"];
-      relation(around:${radius},${lat},${lon})[amenity~"stadium|theatre|museum"];
-      
-      // Important tourist attractions
-      node(around:${radius},${lat},${lon})[tourism~"museum|zoo|theme_park|gallery|monument"];
-      way(around:${radius},${lat},${lon})[tourism~"museum|zoo|theme_park|gallery|monument"];
-      relation(around:${radius},${lat},${lon})[tourism~"museum|zoo|theme_park|gallery|monument"];
-      
-      // Major leisure facilities (we'll filter parks later)
-      node(around:${radius},${lat},${lon})[leisure~"golf_course|marina"];
-      way(around:${radius},${lat},${lon})[leisure~"golf_course|marina"];
-      relation(around:${radius},${lat},${lon})[leisure~"golf_course|marina"];
-      
-      // Landmarks and historic sites
-      node(around:${radius},${lat},${lon})[historic~"monumenttower"];
-      way(around:${radius},${lat},${lon})[historic~"monument|tower"];
-      relation(around:${radius},${lat},${lon})[historic~"monument|tower"];
+      node(around:${radius},${lat},${lon})["place"~"city"];
+      way(around:${radius},${lat},${lon})["place"~"city"];
+      relation(around:${radius},${lat},${lon})["place"~"city"];
+    );
+    out center;
+  `;
+}
+
+function buildTownsQuery(lat, lon, radius) {
+  return `
+    [out:json][timeout:25];
+    (
+      node(around:${radius},${lat},${lon})["place"~"town"];
+      way(around:${radius},${lat},${lon})["place"~"town"];
+      relation(around:${radius},${lat},${lon})["place"~"town"];
     );
     out center;
   `;
@@ -133,13 +112,13 @@ async function callOverpassWithChunking(lat, lon, radius, qBuilder) {
   return { elements: all };
 }
 
-async function fetchPlacesDirectly(lat, lon, radius) {
+async function fetchCitiesDirectly(lat, lon, radius) {
   try {
-    const json = await callOverpassWithChunking(lat, lon, radius, buildOverpassQuery);
+    const json = await callOverpassWithChunking(lat, lon, radius, buildCitiesQuery);
     const elements = json.elements || [];
     
     const items = [];
-    const seenIds = new Set(); // Track seen place IDs to avoid duplicates
+    const seenIds = new Set();
     
     for (let i = 0; i < elements.length; i++) {
       const e = elements[i];
@@ -152,17 +131,11 @@ async function fetchPlacesDirectly(lat, lon, radius) {
         continue;
       }
 
-      const name =
-        tags.name ||
-        tags["addr:housename"] ||
-        tags["amenity"] ||
-        tags["tourism"] ||
-        tags["leisure"] ||
-        tags["historic"] ||
-        "Place";
+      const name = tags.name || "Unnamed settlement";
+      const placeType = tags.place || "settlement";
 
       // Skip if this is a duplicate
-      const placeId = `${e.type}/${e.id}`;
+      const placeId = `${name.toLowerCase()}_${latNum.toFixed(4)}_${lonNum.toFixed(4)}`;
       if (seenIds.has(placeId)) {
         continue;
       }
@@ -173,34 +146,137 @@ async function fetchPlacesDirectly(lat, lon, radius) {
       const dy = (Number(latNum) - cLat) * 110540;
       const distance = Math.sqrt(dx * dx + dy * dy);
 
-      const place = {
+      // Filter out the search area itself
+      if (distance < 1000) continue;
+
+      // Filter out places outside the defined radius (convert to meters)
+      if (distance > radius) continue;
+
+      const item = {
         id: placeId,
         name,
-        type: tags.amenity || tags.tourism || tags.leisure || tags.historic || "Place",
+        type: placeType,
         lat: Number(latNum),
         lon: Number(lonNum),
         distance,
-        address: tags["addr:full"] || tags["addr:street"] || null,
-        tags,
-        score: scorePlace(tags),
       };
 
-      // Filter out generic parks without names (low score)
-      if (place.score >= 8) {
-        items.push(place);
-      }
+      items.push(item);
     }
 
-    // Sort by score and distance
-    items.sort((a, b) =>
-      b.score - a.score || a.distance - b.distance
-    );
+   items.sort((a, b) => a.distance - b.distance);
 
     return items;
 
   } catch (e) {
-    throw new Error("Failed to fetch places: " + e.message);
+    throw new Error("Failed to fetch cities: " + e.message);
   }
+}
+
+async function fetchTownsDirectly(lat, lon, radius) {
+  try {
+    const json = await callOverpassWithChunking(lat, lon, radius, buildTownsQuery);
+    const elements = json.elements || [];
+    
+    const items = [];
+    const seenIds = new Set();
+    
+    for (let i = 0; i < elements.length; i++) {
+      const e = elements[i];
+
+      const tags = e.tags || {};
+      const latNum = e.lat ?? e.center?.lat;
+      const lonNum = e.lon ?? e.center?.lon;
+
+      if (latNum == null || lonNum == null) {
+        continue;
+      }
+
+      const name = tags.name || "Unnamed settlement";
+      const placeType = tags.place || "settlement";
+
+      // Skip if this is a duplicate or a city (we already have cities)
+      if (placeType === "city") continue;
+      
+      const placeId = `${name.toLowerCase()}_${latNum.toFixed(4)}_${lonNum.toFixed(4)}`;
+      if (seenIds.has(placeId)) {
+        continue;
+      }
+      seenIds.add(placeId);
+
+      const cLat = Number(lat), cLon = Number(lon);
+      const dx = (Number(lonNum) - cLon) * 111320 * Math.cos((cLat * Math.PI) / 180);
+      const dy = (Number(latNum) - cLat) * 110540;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      // Filter out the search area itself
+      if (distance < 1000) continue;
+
+      // Filter out places outside the defined radius (convert to meters)
+      if (distance > radius) continue;
+
+      const item = {
+        id: placeId,
+        name,
+        type: placeType,
+        lat: Number(latNum),
+        lon: Number(lonNum),
+        distance,
+      };
+
+      items.push(item);
+    }
+
+    // Sort by type then distance
+    items.sort((a, b) => a.distance - b.distance);
+
+    return items;
+
+
+  } catch (e) {
+    throw new Error("Failed to fetch towns: " + e.message);
+  }
+}
+
+// Function to convert non-English city names to English
+async function translateCityName(name) {
+  try {
+    // If the name contains only ASCII characters, assume it's already in English
+    if (/^[\x00-\x7F]*$/.test(name)) {
+      return name;
+    }
+    
+    // Try to translate using a simple API (you might want to use a proper translation service)
+    const response = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(name)}&langpair=auto|en`);
+    const data = await response.json();
+    
+    if (data.responseData && data.responseData.translatedText) {
+      return data.responseData.translatedText;
+    }
+    
+    return name; // Fallback to original name if translation fails
+  } catch (error) {
+    console.error("Translation error:", error);
+    return name; // Fallback to original name
+  }
+}
+// Component to adjust map view to fit the circle
+function MapFocusController({ center, radiusMeters }) {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (center && radiusMeters) {
+      // Calculate bounds that include the circle
+      const L = window.L;
+      if (L) {
+        const circle = L.circle(center, { radius: radiusMeters });
+        const bounds = circle.getBounds();
+        map.fitBounds(bounds, { padding: [20, 20] });
+      }
+    }
+  }, [center, radiusMeters, map]);
+  
+  return null;
 }
 
 function ResultsContent() {
@@ -224,17 +300,17 @@ function ResultsContent() {
   const radiusMeters = useMemo(() => milesToMeters(radius), [radius]);
 
   const [center, setCenter] = useState([31.5204, 74.3587]); // Default to Islamabad
-  const [loadingPlaces, setLoadingPlaces] = useState(false);
   const [loadingCities, setLoadingCities] = useState(false);
+  const [loadingTowns, setLoadingTowns] = useState(false);
   const [geo, setGeo] = useState(null);
 
   // 👇 main states
-  const [allPlaces, setAllPlaces] = useState([]);
-  const [visiblePlaces, setVisiblePlaces] = useState([]);
   const [allCities, setAllCities] = useState([]);
   const [visibleCities, setVisibleCities] = useState([]);
-  const [loadingMorePlaces, setLoadingMorePlaces] = useState(false);
+  const [allTowns, setAllTowns] = useState([]);
+  const [visibleTowns, setVisibleTowns] = useState([]);
   const [loadingMoreCities, setLoadingMoreCities] = useState(false);
+  const [loadingMoreTowns, setLoadingMoreTowns] = useState(false);
   const [error, setError] = useState("");
   const [mapReady, setMapReady] = useState(false);
 
@@ -257,7 +333,7 @@ function ResultsContent() {
     })();
   }, []);
 
-  // Fetch geo + places + cities
+  // Fetch geo + cities + towns
   useEffect(() => {
     let isCancelled = false;
 
@@ -283,57 +359,40 @@ function ResultsContent() {
         setGeo(g);
         setCenter([lat, lon]);
 
-        // Fetch places directly
-        setLoadingPlaces(true);
-        setVisiblePlaces([]); // Clear any previous places
-        
-        const places = await fetchPlacesDirectly(lat, lon, radiusMeters);
-        if (!isCancelled) {
-          setAllPlaces(places);
-          setVisiblePlaces(places);
-        }
-        
-        setLoadingPlaces(false);
-
-        // Fetch cities (still using API endpoint)
+        // Fetch cities and towns simultaneously
         setLoadingCities(true);
-        fetch(`/api/cities?lat=${lat}&lon=${lon}&radius=${radiusMeters}`)
-          .then(res => {
-            if (!res.ok) throw new Error("Cities fetch failed");
-            return res.json();
-          })
-          .then(data => {
-            if (!isCancelled) {
-              // Filter out duplicate cities using a more robust approach
-              const uniqueCities = [];
-              const seenCityIds = new Set();
-              
-              for (const city of data || []) {
-                // Create a unique ID using both name and coordinates to avoid duplicates
-                const cityId = `${city.name?.toLowerCase().trim()}_${city.lat?.toFixed(4)}_${city.lon?.toFixed(4)}`;
-                
-                if (cityId && !seenCityIds.has(cityId)) {
-                  seenCityIds.add(cityId);
-                  uniqueCities.push(city);
-                }
-              }
-              
-              setAllCities(uniqueCities);
-              // Show first 5 cities immediately
-              const initialCities = uniqueCities.slice(0, 5) || [];
-              setVisibleCities(initialCities);
-            }
-          })
-          .catch(err => {
-            if (!isCancelled) {
-              setError("Failed to load cities: " + err.message);
-            }
-          })
-          .finally(() => {
-            if (!isCancelled) {
-              setLoadingCities(false);
-            }
-          });
+        setLoadingTowns(true);
+        
+        setVisibleCities([]); // Clear any previous data
+        setVisibleTowns([]);
+        
+        // Start both requests at the same time
+        Promise.all([
+          fetchCitiesDirectly(lat, lon, radiusMeters),
+          fetchTownsDirectly(lat, lon, radiusMeters)
+        ]).then(([cities, towns]) => {
+          if (!isCancelled) {
+            setAllCities(cities);
+            setAllTowns(towns);
+            
+            // Show first 5 cities immediately
+            const initialCities = cities.slice(0, 5) || [];
+            setVisibleCities(initialCities);
+            
+            // Show first 5 towns immediately
+            const initialTowns = towns.slice(0, 5) || [];
+            setVisibleTowns(initialTowns);
+          }
+        }).catch(err => {
+          if (!isCancelled) {
+            setError("Failed to load data: " + err.message);
+          }
+        }).finally(() => {
+          if (!isCancelled) {
+            setLoadingCities(false);
+            setLoadingTowns(false);
+          }
+        });
 
       } catch (err) {
         if (!isCancelled) {
@@ -380,12 +439,43 @@ function ResultsContent() {
     }
   }, [allCities, visibleCities]);
 
+  // Progressive loading for towns
+  useEffect(() => {
+    if (allTowns.length > 5 && visibleTowns.length < allTowns.length) {
+      setLoadingMoreTowns(true);
+      
+      let currentIndex = visibleTowns.length;
+      const totalItems = allTowns.length;
+      
+      const loadNextBatch = () => {
+        if (currentIndex >= totalItems) {
+          setLoadingMoreTowns(false);
+          return;
+        }
+        
+        const nextBatch = allTowns.slice(0, currentIndex + 5);
+        setVisibleTowns(nextBatch);
+        currentIndex += 5;
+        
+        // Schedule next batch
+        setTimeout(loadNextBatch, 800);
+      };
+      
+      // Start loading batches after initial display
+      const timer = setTimeout(loadNextBatch, 1000);
+      
+      return () => {
+        clearTimeout(timer);
+      };
+    }
+  }, [allTowns, visibleTowns]);
+
   const allMarkers = useMemo(() => {
     const mk = [];
-    for (const p of visiblePlaces) if (p.lat && p.lon) mk.push({ ...p, kind: "place" });
     for (const c of visibleCities) if (c.lat && c.lon) mk.push({ ...c, kind: "city" });
+    for (const t of visibleTowns) if (t.lat && t.lon) mk.push({ ...t, kind: "town" });
     return mk;
-  }, [visiblePlaces, visibleCities]);
+  }, [visibleCities, visibleTowns]);
 
   const createSlug = (name) => {
     return name
@@ -400,10 +490,10 @@ function ResultsContent() {
         Results near "{query}" within {radius} miles
       </h1>
 
-      {(loadingPlaces || loadingCities) && (
+      {(loadingCities || loadingTowns) && (
         <div className="info">
-          {loadingPlaces && "Loading places… "}
-          {loadingCities && "Loading cities…"}
+          {loadingCities && "Loading cities… "}
+          {loadingTowns && "Loading towns…"}
         </div>
       )}
       {error && <div className="error">⚠️ {error}</div>}
@@ -413,60 +503,7 @@ function ResultsContent() {
           <section className="cards">
             <div className="card">
               <div className="card-header">
-                <h2>Nearby Places</h2>
-                <span className="badge">{allPlaces.length}</span>
-              </div>
-
-              <div className="card-body">
-                {loadingPlaces && visiblePlaces.length === 0 ? (
-                  <div className="muted">Loading places…</div>
-                ) : visiblePlaces.length === 0 ? (
-                  <div className="muted">No places found in this radius.</div>
-                ) : (
-                  <>
-                    {visiblePlaces.map((p) => (
-                      <Link
-                        key={`place-${p.id}`}
-                        href={`/how-far-is-${createSlug(p.name || "Unnamed place")}-from-me`}
-                        className="result-link"
-                      >
-                        <div className="result-section">
-                          <h3 className="result-title">{p.name || "Unnamed place"}</h3>
-                          <dl className="result-meta">
-                            {p.type && (
-                              <>
-                                <dt>Type</dt>
-                                <dd>{p.type}</dd>
-                              </>
-                            )}
-                            {p.distance != null && (
-                              <>
-                                <dt>Distance</dt>
-                                <dd>{(p.distance / 1609.344).toFixed(1)} miles</dd>
-                              </>
-                            )}
-                            {p.address && (
-                              <>
-                                <dt>Address</dt>
-                                <dd>{p.address}</dd>
-                              </>
-                            )}
-                            <dt>Coords</dt>
-                            <dd>
-                              {p.lat.toFixed(5)}, {p.lon.toFixed(5)}
-                            </dd>
-                          </dl>
-                        </div>
-                      </Link>
-                    ))}
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="card-header">
-                <h2>Nearby Cities/Towns</h2>
+                <h2>Nearby Cities</h2>
                 <span className="badge">{allCities.length}</span>
               </div>
 
@@ -474,22 +511,22 @@ function ResultsContent() {
                 {loadingCities && visibleCities.length === 0 ? (
                   <div className="muted">Loading cities…</div>
                 ) : visibleCities.length === 0 ? (
-                  <div className="muted">Loading cities...</div>
+                  <div className="muted">No cities found in this radius.</div>
                 ) : (
                   <>
                     {visibleCities.map((c) => (
                       <Link 
                         key={`city-${c.id}`} 
-                        href={`/how-far-is-${createSlug(c.name || "Unnamed settlement")}-from-me`}
+                        href={`/how-far-is-${createSlug(c.name)}-from-me`}
                         className="result-link"
                       >
                         <div className="result-section">
-                          <h3 className="result-title">{c.name || "Unnamed settlement"}</h3>
+                          <h3 className="result-title">{c.name}</h3>
                           <dl className="result-meta">
-                            {c.place && (
+                            {c.type && (
                               <>
-                                <dt>Place</dt>
-                                <dd>{c.place}</dd>
+                                <dt>Type</dt>
+                                <dd>{c.type}</dd>
                               </>
                             )}
                             {c.distance != null && (
@@ -498,7 +535,7 @@ function ResultsContent() {
                                 <dd>{(c.distance / 1609.344).toFixed(1)} miles</dd>
                               </>
                             )}
-                            <dt>Coords</dt>
+                            <dt>Coordinates</dt>
                             <dd>
                               {c.lat.toFixed(5)}, {c.lon.toFixed(5)}
                             </dd>
@@ -511,26 +548,103 @@ function ResultsContent() {
                 )}
               </div>
             </div>
+
+            <div className="card">
+              <div className="card-header">
+                <h2>Nearby Towns</h2>
+                <span className="badge">{allTowns.length}</span>
+              </div>
+
+              <div className="card-body">
+                {loadingTowns && visibleTowns.length === 0 ? (
+                  <div className="muted">Loading towns…</div>
+                ) : visibleTowns.length === 0 ? (
+                  <div className="muted">No towns found in this radius.</div>
+                ) : (
+                  <>
+                    {visibleTowns.map((t) => (
+                      <Link 
+                        key={`town-${t.id}`} 
+                        href={`/how-far-is-${createSlug(t.name)}-from-me`}
+                        className="result-link"
+                      >
+                        <div className="result-section">
+                          <h3 className="result-title">{t.name}</h3>
+                          <dl className="result-meta">
+                            {t.type && (
+                              <>
+                                <dt>Type</dt>
+                                <dd>{t.type}</dd>
+                              </>
+                            )}
+                            {t.distance != null && (
+                              <>
+                                <dt>Distance</dt>
+                                <dd>{(t.distance / 1609.344).toFixed(1)} miles</dd>
+                              </>
+                            )}
+                            <dt>Coordinates</dt>
+                            <dd>
+                              {t.lat.toFixed(5)}, {t.lon.toFixed(5)}
+                            </dd>
+                          </dl>
+                        </div>
+                      </Link>
+                    ))}
+                    {loadingMoreTowns && <div className="muted">Loading more towns…</div>}
+                  </>
+                )}
+              </div>
+            </div>
           </section>
 
           <section className="map-wrap">
             <div className="map">
               {mapReady && (
-                <MapContainer center={center} zoom={12} style={{ height: "100%", width: "100%" }}>
+                <MapContainer center={center} zoom={10} style={{ height: "100%", width: "100%" }}>
                   <TileLayer
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                   />
+
+                   <MapFocusController center={center} radiusMeters={radiusMeters} />
+                  {/* Search area circle */}
+                  <Circle
+                    center={center}
+                    radius={radiusMeters}
+                    color="blue"
+                    fillColor="blue"
+                    fillOpacity={0.1}
+                  />
+                  
+                  {/* Center marker */}
+                  <Marker position={center}>
+                    <Popup>
+                      <strong>Search Center: {query}</strong>
+                      <br />
+                      <span>Radius: {radius} miles</span>
+                    </Popup>
+                  </Marker>
+                  
+                  {/* City and town markers */}
                   {allMarkers.map((m) => (
-                    <Marker key={`${m.kind}-${m.id}`} position={[m.lat, m.lon]}>
+                    <Marker 
+                      key={`${m.kind}-${m.id}`} 
+                      position={[m.lat, m.lon]}
+                    >
                       <Popup>
-                        <strong>{m.name || (m.kind === "city" ? "Settlement" : "Place")}</strong>
+                        <strong>{m.name}</strong>
                         <br />
-                        {m.type || m.place ? <span>{m.type || m.place}</span> : null}
-                        <br />
-                        {m.address ? <span>{m.address}</span> : null}
+                        <span>Type: {m.type}</span>
                         <br />
                         <span>{(m.distance / 1609.344).toFixed(1)} miles away</span>
+                        <br />
+                        <Link 
+                          href={`/how-far-is-${createSlug(m.name)}-from-me`}
+                          className="popup-link"
+                        >
+                          View details
+                        </Link>
                       </Popup>
                     </Marker>
                   ))}
@@ -548,20 +662,21 @@ export default function ResultsPage() {
   return (
     <div className="page-results">
       <Header />
-        <main id="main-content" >
-      <section className="hero-banner" aria-labelledby="main-heading" aria-describedby="hero-desc">
+      <main id="main-content">
+        <section className="hero-banner" aria-labelledby="main-heading" aria-describedby="hero-desc">
           <div className="content-container">
-            <h1 id="main-heading" className="main-heading">Discover Nearby Places</h1>
-            <p id="hero-desc" className="hero-subtitle">Enter a location and search radius to explore cities,
-                landmarks, and hidden gems near you.</p>
+            <h1 id="main-heading" className="main-heading">Discover Nearby Cities & Towns</h1>
+            <p id="hero-desc" className="hero-subtitle">Enter a location and search radius to explore cities and towns near you.</p>
           </div>
-        </section></main>
-      <main className="container">
-        <Suspense fallback={<div className="info">Loading search parameters...</div>}>
-          <ResultsContent />
-        </Suspense>
+        </section>
+      
+        <div className="container">
+          <Suspense fallback={<div className="info">Loading search parameters...</div>}>
+            <ResultsContent />
+          </Suspense>
+        </div>
       </main>
       <Footer />
     </div>
   );
-} 
+}
