@@ -261,24 +261,66 @@ async function translateCityName(name) {
   }
 }
 // Component to adjust map view to fit the circle
+// Component to adjust map view to fit the circle
 function MapFocusController({ center, radiusMeters }) {
   const map = useMap();
+  const [L, setL] = useState(null);
   
   useEffect(() => {
-    if (center && radiusMeters) {
-      // Calculate bounds that include the circle
-      const L = window.L;
-      if (L) {
+    // Wait for Leaflet to be available
+    if (typeof window !== 'undefined' && window.L) {
+      setL(window.L);
+    }
+  }, []);
+  
+  useEffect(() => {
+    if (center && radiusMeters && map && L) {
+      try {
+        // Calculate bounds that include the circle
         const circle = L.circle(center, { radius: radiusMeters });
-        const bounds = circle.getBounds();
-        map.fitBounds(bounds, { padding: [20, 20] });
+        
+        // Add safety check for getBounds method
+        if (circle && typeof circle.getBounds === 'function') {
+          const bounds = circle.getBounds();
+          map.fitBounds(bounds, { padding: [20, 20] });
+        }
+      } catch (error) {
+        console.error("Error fitting map bounds:", error);
+        // Fallback to simple zoom and center
+        map.setView(center, 10);
       }
     }
-  }, [center, radiusMeters, map]);
+  }, [center, radiusMeters, map, L]);
   
   return null;
 }
 
+
+const handleNavigation = async (name, e) => {
+  // Prevent default navigation
+  e.preventDefault();
+  
+  try {
+    // Check if name contains non-ASCII characters (non-English)
+    const isEnglish = /^[\x00-\x7F]*$/.test(name);
+    
+    let englishName = name;
+    
+    // If not English, translate it
+    if (!isEnglish) {
+      englishName = await translateCityName(name);
+    }
+    
+    // Create slug and navigate
+    const slug = createSlug(englishName);
+    window.location.href = `/how-far-is-${slug}-from-me`;
+  } catch (error) {
+    console.error("Navigation error:", error);
+    // Fallback: navigate with original name
+    const slug = createSlug(name);
+    window.location.href = `/how-far-is-${slug}-from-me`;
+  }
+};
 function ResultsContent() {
   // Safely extract parameters with proper fallbacks
   const params = useParams();
@@ -519,6 +561,7 @@ function ResultsContent() {
                         key={`city-${c.id}`} 
                         href={`/how-far-is-${createSlug(c.name)}-from-me`}
                         className="result-link"
+                        onClick={(e) => handleNavigation(c.name, e)}
                       >
                         <div className="result-section">
                           <h3 className="result-title">{c.name}</h3>
@@ -567,6 +610,7 @@ function ResultsContent() {
                         key={`town-${t.id}`} 
                         href={`/how-far-is-${createSlug(t.name)}-from-me`}
                         className="result-link"
+                        onClick={(e) => handleNavigation(c.name, e)}
                       >
                         <div className="result-section">
                           <h3 className="result-title">{t.name}</h3>
