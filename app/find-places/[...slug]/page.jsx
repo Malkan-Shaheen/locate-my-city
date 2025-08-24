@@ -62,6 +62,7 @@ function buildTownsQuery(lat, lon, radius) {
 }
 
 async function callOverpassQuery(q) {
+  console.log("Calling Overpass API with query:", q);
   const endpoints = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
@@ -70,15 +71,18 @@ async function callOverpassQuery(q) {
   
   for (const ep of endpoints) {
     try {
+      console.log("Trying endpoint:", ep);
       const r = await fetch(ep, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: `data=${encodeURIComponent(q)}`,
       });
       if (r.ok) {
+        console.log("Successfully fetched from endpoint:", ep);
         return r.json();
       }
     } catch (e) {
+      console.error("Error with endpoint", ep, e);
       continue;
     }
   }
@@ -86,6 +90,7 @@ async function callOverpassQuery(q) {
 }
 
 async function callOverpassWithChunking(lat, lon, radius, qBuilder) {
+  console.log("callOverpassWithChunking called with:", {lat, lon, radius});
   // if radius ≤ 300km, single query
   if (radius <= 300000) {
     const q = qBuilder(lat, lon, radius);
@@ -106,134 +111,113 @@ async function callOverpassWithChunking(lat, lon, radius, qBuilder) {
       }
     } catch (e) {
       // Continue with next chunk if one fails
+      console.error("Chunk failed:", e);
     }
     start = end;
   }
   return { elements: all };
 }
 
-async function fetchCitiesDirectly(lat, lon, radius) {
+// Process data in chunks for progressive loading
+function processChunk(elements, centerLat, centerLon, radius) {
+  const items = [];
+  const seenIds = new Set();
+  
+  for (const e of elements) {
+    const tags = e.tags || {};
+    const latNum = e.lat ?? e.center?.lat;
+    const lonNum = e.lon ?? e.center?.lon;
+
+    if (latNum == null || lonNum == null) continue;
+
+    const name = tags.name || "Unnamed settlement";
+    const placeType = tags.place || "settlement";
+
+    // Skip if this is a duplicate
+    const placeId = `${name.toLowerCase()}_${latNum.toFixed(4)}_${lonNum.toFixed(4)}`;
+    if (seenIds.has(placeId)) continue;
+    seenIds.add(placeId);
+
+    // Calculate distance and filter
+    const cLat = Number(centerLat), cLon = Number(centerLon);
+    const dx = (Number(lonNum) - cLon) * 111320 * Math.cos((cLat * Math.PI) / 180);
+    const dy = (Number(latNum) - cLat) * 110540;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    // Filter out the search area itself and places outside radius
+    if (distance < 1000 || distance > radius) continue;
+
+    items.push({
+      id: placeId,
+      name,
+      type: placeType,
+      lat: Number(latNum),
+      lon: Number(lonNum),
+      distance,
+    });
+  }
+
+  return items;
+}
+
+// Modified fetch functions for true progressive loading
+async function fetchCitiesDirectly(lat, lon, radius, onDataChunk) {
+  console.log("fetchCitiesDirectly called with:", {lat, lon, radius});
   try {
     const json = await callOverpassWithChunking(lat, lon, radius, buildCitiesQuery);
     const elements = json.elements || [];
+    console.log("Raw city elements from API:", elements.length);
     
-    const items = [];
-    const seenIds = new Set();
-    
-    for (let i = 0; i < elements.length; i++) {
-      const e = elements[i];
-
-      const tags = e.tags || {};
-      const latNum = e.lat ?? e.center?.lat;
-      const lonNum = e.lon ?? e.center?.lon;
-
-      if (latNum == null || lonNum == null) {
-        continue;
+    // Process data in chunks for true progressive loading
+    const chunkSize = 20;
+    for (let i = 0; i < elements.length; i += chunkSize) {
+      const chunk = elements.slice(i, i + chunkSize);
+      const processedChunk = processChunk(chunk, lat, lon, radius);
+      
+      if (processedChunk.length > 0) {
+        onDataChunk(processedChunk);
       }
-
-      const name = tags.name || "Unnamed settlement";
-      const placeType = tags.place || "settlement";
-
-      // Skip if this is a duplicate
-      const placeId = `${name.toLowerCase()}_${latNum.toFixed(4)}_${lonNum.toFixed(4)}`;
-      if (seenIds.has(placeId)) {
-        continue;
-      }
-      seenIds.add(placeId);
-
-      const cLat = Number(lat), cLon = Number(lon);
-      const dx = (Number(lonNum) - cLon) * 111320 * Math.cos((cLat * Math.PI) / 180);
-      const dy = (Number(latNum) - cLat) * 110540;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      // Filter out the search area itself
-      if (distance < 1000) continue;
-
-      // Filter out places outside the defined radius (convert to meters)
-      if (distance > radius) continue;
-
-      const item = {
-        id: placeId,
-        name,
-        type: placeType,
-        lat: Number(latNum),
-        lon: Number(lonNum),
-        distance,
-      };
-
-      items.push(item);
+      
+      // Small delay to allow UI updates between chunks
+      await new Promise(resolve => setTimeout(resolve, 30));
     }
 
-   items.sort((a, b) => a.distance - b.distance);
-
-    return items;
+    return elements.length;
 
   } catch (e) {
+    console.error("Error in fetchCitiesDirectly:", e);
     throw new Error("Failed to fetch cities: " + e.message);
   }
 }
 
-async function fetchTownsDirectly(lat, lon, radius) {
+async function fetchTownsDirectly(lat, lon, radius, onDataChunk) {
+  console.log("fetchTownsDirectly called with:", {lat, lon, radius});
   try {
     const json = await callOverpassWithChunking(lat, lon, radius, buildTownsQuery);
     const elements = json.elements || [];
+    console.log("Raw town elements from API:", elements.length);
     
-    const items = [];
-    const seenIds = new Set();
-    
-    for (let i = 0; i < elements.length; i++) {
-      const e = elements[i];
-
-      const tags = e.tags || {};
-      const latNum = e.lat ?? e.center?.lat;
-      const lonNum = e.lon ?? e.center?.lon;
-
-      if (latNum == null || lonNum == null) {
-        continue;
-      }
-
-      const name = tags.name || "Unnamed settlement";
-      const placeType = tags.place || "settlement";
-
-      // Skip if this is a duplicate or a city (we already have cities)
-      if (placeType === "city") continue;
+    // Process data in chunks for true progressive loading
+    const chunkSize = 20;
+    for (let i = 0; i < elements.length; i += chunkSize) {
+      const chunk = elements.slice(i, i + chunkSize);
+      const processedChunk = processChunk(chunk, lat, lon, radius);
       
-      const placeId = `${name.toLowerCase()}_${latNum.toFixed(4)}_${lonNum.toFixed(4)}`;
-      if (seenIds.has(placeId)) {
-        continue;
+      // Filter out cities from towns
+      const filteredChunk = processedChunk.filter(item => item.type !== "city");
+      
+      if (filteredChunk.length > 0) {
+        onDataChunk(filteredChunk);
       }
-      seenIds.add(placeId);
-
-      const cLat = Number(lat), cLon = Number(lon);
-      const dx = (Number(lonNum) - cLon) * 111320 * Math.cos((cLat * Math.PI) / 180);
-      const dy = (Number(latNum) - cLat) * 110540;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      // Filter out the search area itself
-      if (distance < 1000) continue;
-
-      // Filter out places outside the defined radius (convert to meters)
-      if (distance > radius) continue;
-
-      const item = {
-        id: placeId,
-        name,
-        type: placeType,
-        lat: Number(latNum),
-        lon: Number(lonNum),
-        distance,
-      };
-
-      items.push(item);
+      
+      // Small delay to allow UI updates between chunks
+      await new Promise(resolve => setTimeout(resolve, 30));
     }
 
-    // Sort by type then distance
-    items.sort((a, b) => a.distance - b.distance);
-
-    return items;
-
+    return elements.length;
 
   } catch (e) {
+    console.error("Error in fetchTownsDirectly:", e);
     throw new Error("Failed to fetch towns: " + e.message);
   }
 }
@@ -260,6 +244,7 @@ async function translateCityName(name) {
     return name; // Fallback to original name
   }
 }
+
 // Component to adjust map view to fit the circle
 function MapFocusController({ center, radiusMeters }) {
   const map = useMap();
@@ -293,6 +278,7 @@ function ResultsContent() {
   // Safely extract parameters with proper fallbacks
   const params = useParams();
   const slugArray = params?.slug || [];
+  console.log("URL params:", {slugArray});
 
   // defaults
   let radius = "10";
@@ -308,6 +294,7 @@ function ResultsContent() {
 
   const query = location.trim();
   const radiusMeters = useMemo(() => milesToMeters(radius), [radius]);
+  console.log("Parsed parameters:", {query, radius, radiusMeters});
 
   const [center, setCenter] = useState([31.5204, 74.3587]); // Default to Islamabad
   const [loadingCities, setLoadingCities] = useState(false);
@@ -319,14 +306,13 @@ function ResultsContent() {
   const [visibleCities, setVisibleCities] = useState([]);
   const [allTowns, setAllTowns] = useState([]);
   const [visibleTowns, setVisibleTowns] = useState([]);
-  const [loadingMoreCities, setLoadingMoreCities] = useState(false);
-  const [loadingMoreTowns, setLoadingMoreTowns] = useState(false);
   const [error, setError] = useState("");
   const [mapReady, setMapReady] = useState(false);
 
   // Configure leaflet icons
   useEffect(() => {
     (async () => {
+      console.log("Setting up leaflet icons");
       const L = (await import("leaflet")).default;
       const markerIcon2x = (await import("leaflet/dist/images/marker-icon-2x.png")).default;
       const markerIcon = (await import("leaflet/dist/images/marker-icon.png")).default;
@@ -340,6 +326,7 @@ function ResultsContent() {
       });
       
       setMapReady(true);
+      console.log("Leaflet icons setup complete");
     })();
   }, []);
 
@@ -350,12 +337,14 @@ function ResultsContent() {
     async function fetchData() {
       try {
         setError("");
+        console.log("Starting data fetch for query:", query);
 
         if (!query) {
           throw new Error("No location provided");
         }
 
         // Fetch geocode
+        console.log("Fetching geocode for:", query);
         const geoRes = await fetch(`/api/geocode?query=${encodeURIComponent(query)}`);
         if (!geoRes.ok) throw new Error("Geocoding failed");
         const g = await geoRes.json();
@@ -366,46 +355,77 @@ function ResultsContent() {
 
         const lat = Number(g.lat);
         const lon = Number(g.lon);
+        console.log("Geocode result:", g);
         setGeo(g);
         setCenter([lat, lon]);
 
-        // Fetch cities and towns simultaneously
-        setLoadingCities(true);
-        setLoadingTowns(true);
-        
-        setVisibleCities([]); // Clear any previous data
+        // Clear previous data
+        setVisibleCities([]);
         setVisibleTowns([]);
+        setAllCities([]);
+        setAllTowns([]);
+
+        // Fetch cities with TRUE progressive loading
+        setLoadingCities(true);
+        console.log("Starting cities fetch with progressive loading");
         
-        // Start both requests at the same time
-        Promise.all([
-          fetchCitiesDirectly(lat, lon, radiusMeters),
-          fetchTownsDirectly(lat, lon, radiusMeters)
-        ]).then(([cities, towns]) => {
+        fetchCitiesDirectly(lat, lon, radiusMeters, (citiesChunk) => {
           if (!isCancelled) {
-            setAllCities(cities);
-            setAllTowns(towns);
-            
-            // Show first 5 cities immediately
-            const initialCities = cities.slice(0, 5) || [];
-            setVisibleCities(initialCities);
-            
-            // Show first 5 towns immediately
-            const initialTowns = towns.slice(0, 5) || [];
-            setVisibleTowns(initialTowns);
+            console.log("Processing cities chunk:", citiesChunk.length);
+            setVisibleCities(prev => {
+              const newCities = [...prev, ...citiesChunk];
+              // Sort by distance as we add new items
+              return newCities.sort((a, b) => a.distance - b.distance);
+            });
+            setAllCities(prev => [...prev, ...citiesChunk]);
           }
-        }).catch(err => {
+        })
+        .then(totalCount => {
           if (!isCancelled) {
-            setError("Failed to load data: " + err.message);
-          }
-        }).finally(() => {
-          if (!isCancelled) {
+            console.log("Cities fetch completed:", totalCount, "cities processed");
             setLoadingCities(false);
+          }
+        })
+        .catch(err => {
+          if (!isCancelled) {
+            console.error("Cities fetch error:", err);
+            setError("Failed to load cities: " + err.message);
+            setLoadingCities(false);
+          }
+        });
+
+        // Fetch towns with TRUE progressive loading
+        setLoadingTowns(true);
+        console.log("Starting towns fetch with progressive loading");
+        
+        fetchTownsDirectly(lat, lon, radiusMeters, (townsChunk) => {
+          if (!isCancelled) {
+            console.log("Processing towns chunk:", townsChunk.length);
+            setVisibleTowns(prev => {
+              const newTowns = [...prev, ...townsChunk];
+              // Sort by distance as we add new items
+              return newTowns.sort((a, b) => a.distance - b.distance);
+            });
+            setAllTowns(prev => [...prev, ...townsChunk]);
+          }
+        })
+        .then(totalCount => {
+          if (!isCancelled) {
+            console.log("Towns fetch completed:", totalCount, "towns processed");
+            setLoadingTowns(false);
+          }
+        })
+        .catch(err => {
+          if (!isCancelled) {
+            console.error("Towns fetch error:", err);
+            setError("Failed to load towns: " + err.message);
             setLoadingTowns(false);
           }
         });
 
       } catch (err) {
         if (!isCancelled) {
+          console.error("Data fetch error:", err);
           setError(err.message || "Something went wrong");
         }
       }
@@ -415,84 +435,34 @@ function ResultsContent() {
 
     return () => {
       isCancelled = true;
+      console.log("Cleanup: cancelling data fetch");
     };
   }, [query, radiusMeters]);
-
-  // Progressive loading for cities
-  useEffect(() => {
-    if (allCities.length > 5 && visibleCities.length < allCities.length) {
-      setLoadingMoreCities(true);
-      
-      let currentIndex = visibleCities.length;
-      const totalItems = allCities.length;
-      
-      const loadNextBatch = () => {
-        if (currentIndex >= totalItems) {
-          setLoadingMoreCities(false);
-          return;
-        }
-        
-        const nextBatch = allCities.slice(0, currentIndex + 5);
-        setVisibleCities(nextBatch);
-        currentIndex += 5;
-        
-        // Schedule next batch
-        setTimeout(loadNextBatch, 800);
-      };
-      
-      // Start loading batches after initial display
-      const timer = setTimeout(loadNextBatch, 1000);
-      
-      return () => {
-        clearTimeout(timer);
-      };
-    }
-  }, [allCities, visibleCities]);
-
-  // Progressive loading for towns
-  useEffect(() => {
-    if (allTowns.length > 5 && visibleTowns.length < allTowns.length) {
-      setLoadingMoreTowns(true);
-      
-      let currentIndex = visibleTowns.length;
-      const totalItems = allTowns.length;
-      
-      const loadNextBatch = () => {
-        if (currentIndex >= totalItems) {
-          setLoadingMoreTowns(false);
-          return;
-        }
-        
-        const nextBatch = allTowns.slice(0, currentIndex + 5);
-        setVisibleTowns(nextBatch);
-        currentIndex += 5;
-        
-        // Schedule next batch
-        setTimeout(loadNextBatch, 800);
-      };
-      
-      // Start loading batches after initial display
-      const timer = setTimeout(loadNextBatch, 1000);
-      
-      return () => {
-        clearTimeout(timer);
-      };
-    }
-  }, [allTowns, visibleTowns]);
 
   const allMarkers = useMemo(() => {
     const mk = [];
     for (const c of visibleCities) if (c.lat && c.lon) mk.push({ ...c, kind: "city" });
     for (const t of visibleTowns) if (t.lat && t.lon) mk.push({ ...t, kind: "town" });
+    console.log("All markers for map:", mk.length);
     return mk;
   }, [visibleCities, visibleTowns]);
 
   const createSlug = (name) => {
     return name
       .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/[^a-z00-9]+/g, '-')
       .replace(/^-|-$/g, '');
   };
+  
+  console.log("Rendering with state:", {
+    loadingCities, 
+    loadingTowns, 
+    visibleCities: visibleCities.length, 
+    visibleTowns: visibleTowns.length,
+    allCities: allCities.length,
+    allTowns: allTowns.length,
+    error
+  });
   
   return (
     <>
@@ -514,7 +484,7 @@ function ResultsContent() {
             <div className="card">
               <div className="card-header">
                 <h2>Nearby Cities</h2>
-                <span className="badge">{allCities.length}</span>
+                <span className="badge">{visibleCities.length}</span>
               </div>
 
               <div className="card-body">
@@ -553,7 +523,7 @@ function ResultsContent() {
                         </div>
                       </Link>
                     ))}
-                    {loadingMoreCities && <div className="muted">Loading more cities…</div>}
+                    {loadingCities && <div className="muted">Loading more cities…</div>}
                   </>
                 )}
               </div>
@@ -562,7 +532,7 @@ function ResultsContent() {
             <div className="card">
               <div className="card-header">
                 <h2>Nearby Towns</h2>
-                <span className="badge">{allTowns.length}</span>
+                <span className="badge">{visibleTowns.length}</span>
               </div>
 
               <div className="card-body">
@@ -601,7 +571,7 @@ function ResultsContent() {
                         </div>
                       </Link>
                     ))}
-                    {loadingMoreTowns && <div className="muted">Loading more towns…</div>}
+                    {loadingTowns && <div className="muted">Loading more towns…</div>}
                   </>
                 )}
               </div>
