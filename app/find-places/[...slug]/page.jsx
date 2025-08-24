@@ -89,6 +89,60 @@ async function callOverpassQuery(q) {
   throw new Error("All Overpass endpoints failed");
 }
 
+// Add this component to handle map bounds fitting
+function MapBoundsFitter({ markers, center, radiusMeters }) {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (map && typeof window !== 'undefined' && window.L) {
+      const L = window.L;
+      
+      // Create a group of all items that should be visible
+      const itemsToFit = [];
+      
+      // Add the center point (search location)
+      itemsToFit.push(L.latLng(center[0], center[1]));
+      
+      // Add all markers
+      markers.forEach(marker => {
+        itemsToFit.push(L.latLng(marker.lat, marker.lon));
+      });
+      
+      // If we have items to fit, adjust the map view
+      if (itemsToFit.length > 0) {
+        try {
+          // Create a bounds that contains all items
+          const bounds = L.latLngBounds(itemsToFit);
+          
+          // If we have a search radius, include it in the bounds calculation
+          if (radiusMeters && radiusMeters > 0) {
+            const circle = L.circle(center, { radius: radiusMeters });
+            const circleBounds = circle.getBounds();
+            
+            // Extend the bounds to include the search area circle
+            if (circleBounds.isValid()) {
+              bounds.extend(circleBounds);
+            }
+          }
+          
+          // Check if bounds are valid before fitting
+          if (bounds.isValid()) {
+            // Fit the map to the bounds with some padding
+            map.fitBounds(bounds, { 
+              padding: [50, 50], // Add padding so markers aren't at the very edge
+              maxZoom: 12 // Optional: Limit maximum zoom level
+            });
+          }
+        } catch (error) {
+          console.error("Error fitting map bounds:", error);
+        }
+      }
+    }
+  }, [map, markers, center, radiusMeters]);
+  
+  return null;
+}
+
 async function callOverpassWithChunking(lat, lon, radius, qBuilder, onDataChunk = null) {
   console.log("callOverpassWithChunking called with:", {lat, lon, radius});
   
@@ -580,53 +634,59 @@ function ResultsContent() {
             <div className="map">
               {mapReady && (
                 <MapContainer center={center} zoom={10} style={{ height: "100%", width: "100%" }}>
-                  <TileLayer
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  />
-
-                   <MapFocusController center={center} radiusMeters={radiusMeters} />
-                  {/* Search area circle */}
-                  <Circle
-                    center={center}
-                    radius={radiusMeters}
-                    color="blue"
-                    fillColor="blue"
-                    fillOpacity={0.1}
-                  />
-                  
-                  {/* Center marker */}
-                  <Marker position={center}>
-                    <Popup>
-                      <strong>Search Center: {query}</strong>
-                      <br />
-                      <span>Radius: {radius} miles</span>
-                    </Popup>
-                  </Marker>
-                  
-                  {/* City and town markers */}
-                  {allMarkers.map((m) => (
-                    <Marker 
-                      key={`${m.kind}-${m.id}`} 
-                      position={[m.lat, m.lon]}
-                    >
-                      <Popup>
-                        <strong>{m.name}</strong>
-                        <br />
-                        <span>Type: {m.type}</span>
-                        <br />
-                        <span>{(m.distance / 1609.344).toFixed(1)} miles away</span>
-                        <br />
-                        <Link 
-                          href={`/how-far-is-${createSlug(m.name)}-from-me`}
-                          className="popup-link"
-                        >
-                          View details
-                        </Link>
-                      </Popup>
-                    </Marker>
-                  ))}
-                </MapContainer>
+  <TileLayer
+    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+  />
+  
+  {/* Add the bounds fitter component */}
+  <MapBoundsFitter 
+    markers={allMarkers} 
+    center={center} 
+    radiusMeters={radiusMeters} 
+  />
+  
+  {/* Search area circle */}
+  <Circle
+    center={center}
+    radius={radiusMeters}
+    color="blue"
+    fillColor="blue"
+    fillOpacity={0.1}
+  />
+  
+  {/* Center marker */}
+  <Marker position={center}>
+    <Popup>
+      <strong>Search Center: {query}</strong>
+      <br />
+      <span>Radius: {radius} miles</span>
+    </Popup>
+  </Marker>
+  
+  {/* City and town markers */}
+  {allMarkers.map((m) => (
+    <Marker 
+      key={`${m.kind}-${m.id}`} 
+      position={[m.lat, m.lon]}
+    >
+      <Popup>
+        <strong>{m.name}</strong>
+        <br />
+        <span>Type: {m.type}</span>
+        <br />
+        <span>{(m.distance / 1609.344).toFixed(1)} miles away</span>
+        <br />
+        <Link 
+          href={`/how-far-is-${createSlug(m.name)}-from-me`}
+          className="popup-link"
+        >
+          View details
+        </Link>
+      </Popup>
+    </Marker>
+  ))}
+</MapContainer>
               )}
             </div>
           </section>
