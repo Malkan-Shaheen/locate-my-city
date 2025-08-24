@@ -36,6 +36,13 @@ const Circle = dynamic(
 
 const milesToMeters = (mi) => Number(mi) * 1609.344;
 
+// Cache implementation
+const queryCache = new Map();
+
+function getCacheKey(lat, lon, radius, queryType) {
+  return `${lat.toFixed(4)}_${lon.toFixed(4)}_${radius}_${queryType}`;
+}
+
 // Overpass API helper functions
 function buildCitiesQuery(lat, lon, radius) {
   return `
@@ -61,8 +68,28 @@ function buildTownsQuery(lat, lon, radius) {
   `;
 }
 
-async function callOverpassQuery(q) {
+// Combined query for faster initial loading
+function buildCombinedQuery(lat, lon, radius) {
+  return `
+    [out:json][timeout:25];
+    (
+      node(around:${radius},${lat},${lon})["place"~"city|town"];
+      way(around:${radius},${lat},${lon})["place"~"city|town"];
+      relation(around:${radius},${lat},${lon})["place"~"city|town"];
+    );
+    out center;
+  `;
+}
+
+async function callOverpassQuery(q, useCache = true) {
   console.log("Calling Overpass API with query:", q);
+  
+  // Check cache first if enabled
+  if (useCache && queryCache.has(q)) {
+    console.log("Cache hit for query");
+    return queryCache.get(q);
+  }
+  
   const endpoints = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
@@ -79,7 +106,15 @@ async function callOverpassQuery(q) {
       });
       if (r.ok) {
         console.log("Successfully fetched from endpoint:", ep);
-        return r.json();
+        const data = await r.json();
+        
+        // Cache the result (with 5 minute expiry)
+        if (useCache) {
+          queryCache.set(q, data);
+          setTimeout(() => queryCache.delete(q), 5 * 60 * 1000);
+        }
+        
+        return data;
       }
     } catch (e) {
       console.error("Error with endpoint", ep, e);
@@ -211,6 +246,35 @@ function processChunk(elements, centerLat, centerLon, radius, query = "") {
   return items;
 }
 
+// New function to fetch initial data quickly
+async function fetchInitialSettlements(lat, lon, radius, onDataChunk, query) {
+  console.log("fetchInitialSettlements called with:", {lat, lon, radius});
+  try {
+    // Use a smaller radius for initial quick results
+    const initialRadius = Math.min(radius, 50000); // 50km max for initial fetch
+    
+    const q = buildCombinedQuery(lat, lon, initialRadius);
+    const json = await callOverpassQuery(q, true); // Use cache for initial fetch
+    
+    if (json?.elements) {
+      const processed = processChunk(json.elements, lat, lon, initialRadius, query);
+      
+      // Separate cities and towns
+      const cities = processed.filter(item => item.type === "city");
+      const towns = processed.filter(item => item.type === "town");
+      
+      if (onDataChunk) {
+        onDataChunk({ cities, towns });
+      }
+    }
+    
+    return json.elements?.length || 0;
+  } catch (e) {
+    console.error("Error in fetchInitialSettlements:", e);
+    throw new Error("Failed to fetch initial settlements: " + e.message);
+  }
+}
+
 async function fetchCitiesDirectly(lat, lon, radius, onDataChunk, query) {
   console.log("fetchCitiesDirectly called with:", {lat, lon, radius});
   try {
@@ -305,6 +369,7 @@ function ResultsContent() {
   const [visibleTowns, setVisibleTowns] = useState([]);
   const [error, setError] = useState("");
   const [mapReady, setMapReady] = useState(false);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
   // Configure leaflet icons
   useEffect(() => {
@@ -362,63 +427,100 @@ function ResultsContent() {
         setAllCities([]);
         setAllTowns([]);
 
-        // Fetch cities with TRUE progressive loading
+        // First: Fetch initial results quickly with combined query
+        console.log("Starting initial combined fetch");
         setLoadingCities(true);
-        console.log("Starting cities fetch with progressive loading");
+        setLoadingTowns(true);
         
-        fetchCitiesDirectly(lat, lon, radiusMeters, (citiesChunk) => {
+        fetchInitialSettlements(lat, lon, radiusMeters, (data) => {
           if (!isCancelled) {
-            console.log("Processing cities chunk:", citiesChunk.length);
-            setVisibleCities(prev => {
-              const newCities = [...prev, ...citiesChunk];
-              // Sort by distance as we add new items
-              return newCities.sort((a, b) => a.distance - b.distance);
-            });
-            setAllCities(prev => [...prev, ...citiesChunk]);
+            console.log("Processing initial settlements:", data.cities.length, "cities,", data.towns.length, "towns");
+            
+            if (data.cities.length > 0) {
+              setVisibleCities(data.cities.sort((a, b) => a.distance - b.distance));
+              setAllCities(data.cities);
+            }
+            
+            if (data.towns.length > 0) {
+              setVisibleTowns(data.towns.sort((a, b) => a.distance - b.distance));
+              setAllTowns(data.towns);
+            }
+            
+            setInitialLoadComplete(true);
+            setLoadingCities(false);
+            setLoadingTowns(false);
           }
         })
         .then(totalCount => {
           if (!isCancelled) {
-            console.log("Cities fetch completed:", totalCount, "cities processed");
-            setLoadingCities(false);
+            console.log("Initial fetch completed:", totalCount, "items processed");
           }
         })
         .catch(err => {
           if (!isCancelled) {
-            console.error("Cities fetch error:", err);
-            setError("Failed to load cities: " + err.message);
-            setLoadingCities(false);
+            console.error("Initial fetch error:", err);
+            // Continue with individual fetches even if initial fails
           }
         });
 
-        // Fetch towns with TRUE progressive loading
-        setLoadingTowns(true);
-        console.log("Starting towns fetch with progressive loading");
-        
-        fetchTownsDirectly(lat, lon, radiusMeters, (townsChunk) => {
-          if (!isCancelled) {
-            console.log("Processing towns chunk:", townsChunk.length);
-            setVisibleTowns(prev => {
-              const newTowns = [...prev, ...townsChunk];
-              // Sort by distance as we add new items
-              return newTowns.sort((a, b) => a.distance - b.distance);
-            });
-            setAllTowns(prev => [...prev, ...townsChunk]);
-          }
-        })
-        .then(totalCount => {
-          if (!isCancelled) {
-            console.log("Towns fetch completed:", totalCount, "towns processed");
-            setLoadingTowns(false);
-          }
-        })
-        .catch(err => {
-          if (!isCancelled) {
-            console.error("Towns fetch error:", err);
-            setError("Failed to load towns: " + err.message);
-            setLoadingTowns(false);
-          }
-        });
+        // Second: Fetch full results in background
+        if (radiusMeters > 50000) {
+          console.log("Starting full cities fetch in background");
+          setLoadingCities(true);
+          
+          fetchCitiesDirectly(lat, lon, radiusMeters, (citiesChunk) => {
+            if (!isCancelled) {
+              console.log("Processing cities chunk:", citiesChunk.length);
+              setVisibleCities(prev => {
+                const newCities = [...prev, ...citiesChunk];
+                // Sort by distance as we add new items
+                return newCities.sort((a, b) => a.distance - b.distance);
+              });
+              setAllCities(prev => [...prev, ...citiesChunk]);
+            }
+          })
+          .then(totalCount => {
+            if (!isCancelled) {
+              console.log("Cities fetch completed:", totalCount, "cities processed");
+              setLoadingCities(false);
+            }
+          })
+          .catch(err => {
+            if (!isCancelled) {
+              console.error("Cities fetch error:", err);
+              setError("Failed to load cities: " + err.message);
+              setLoadingCities(false);
+            }
+          });
+
+          console.log("Starting full towns fetch in background");
+          setLoadingTowns(true);
+          
+          fetchTownsDirectly(lat, lon, radiusMeters, (townsChunk) => {
+            if (!isCancelled) {
+              console.log("Processing towns chunk:", townsChunk.length);
+              setVisibleTowns(prev => {
+                const newTowns = [...prev, ...townsChunk];
+                // Sort by distance as we add new items
+                return newTowns.sort((a, b) => a.distance - b.distance);
+              });
+              setAllTowns(prev => [...prev, ...townsChunk]);
+            }
+          })
+          .then(totalCount => {
+            if (!isCancelled) {
+              console.log("Towns fetch completed:", totalCount, "towns processed");
+              setLoadingTowns(false);
+            }
+          })
+          .catch(err => {
+            if (!isCancelled) {
+              console.error("Towns fetch error:", err);
+              setError("Failed to load towns: " + err.message);
+              setLoadingTowns(false);
+            }
+          });
+        }
 
       } catch (err) {
         if (!isCancelled) {
@@ -458,7 +560,8 @@ function ResultsContent() {
     visibleTowns: visibleTowns.length,
     allCities: allCities.length,
     allTowns: allTowns.length,
-    error
+    error,
+    initialLoadComplete
   });
   
   return (
@@ -471,6 +574,7 @@ function ResultsContent() {
         <div className="info">
           {loadingCities && "Loading cities… "}
           {loadingTowns && "Loading towns…"}
+          {initialLoadComplete && " (loading more results…)"}
         </div>
       )}
       {error && <div className="error">⚠️ {error}</div>}
@@ -520,7 +624,7 @@ function ResultsContent() {
                         </div>
                       </Link>
                     ))}
-                    {loadingCities && <div className="muted">Loading more cities…</div>}
+                    {loadingCities && initialLoadComplete && <div className="muted">Loading more cities…</div>}
                   </>
                 )}
               </div>
@@ -568,7 +672,7 @@ function ResultsContent() {
                         </div>
                       </Link>
                     ))}
-                    {loadingTowns && <div className="muted">Loading more towns…</div>}
+                    {loadingTowns && initialLoadComplete && <div className="muted">Loading more towns…</div>}
                   </>
                 )}
               </div>
