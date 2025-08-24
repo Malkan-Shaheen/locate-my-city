@@ -233,7 +233,7 @@ const router = useRouter();
           letter-spacing: 1px;
           font-size: 1.2rem;
           margin: 0;
-          font-weight: 700;
+          font-weight: 700; 
           }
       `}</style>
 
