@@ -1,8 +1,12 @@
 'use client';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from "next/navigation";
 
 
 const Header = () => {
+
+const router = useRouter();
+
   const [menuOpen, setMenuOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const menuRef = useRef(null);
@@ -74,6 +78,7 @@ const Header = () => {
           max-width: 1200px;
           margin: 0 auto;
           padding: 0 16px;
+          // border:2px solid red;
         }
 
         .header-content {
@@ -82,7 +87,13 @@ const Header = () => {
           align-items: center;
           width: 100%;
         }
-
+.header-btn {
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
         .logo {
           display: flex;
           align-items: center;
@@ -215,6 +226,7 @@ const Header = () => {
           .logo h2 {
             display: none;
           }
+          
         }
       `}</style>
 
@@ -224,17 +236,21 @@ const Header = () => {
       <header role="banner" ref={headerRef}>
         <div className="container">
           <div className="header-content">
-            <div className="logo">
-              <img
-                src="/Images/cityfav.png"
-                alt="Locate My City logo"
-                className="logo-image"
-                width="32"
-                height="32"
-                loading="lazy"
-              />
-              <h2>LocateMyCity</h2>
-            </div>
+
+           <button class="header-btn"
+      onClick={() => router.push("/")}
+      
+    >
+      <img
+        src="/Images/cityfav.png"
+        alt="Locate My City logo"
+        className="logo-image"
+        width="32"
+        height="32"
+        loading="lazy"
+      />
+      <h2>LocateMyCity</h2>
+    </button>
 
             <nav className="nav-links" aria-label="Main navigation">
               <a href="/" onClick={(e) => handleNavigation(e, '/')}>Home</a>
