@@ -577,62 +577,65 @@ function ResultsContent() {
 
           <section className="map-wrap">
             <div className="map">
-              {mapReady && (
-                <MapContainer center={center} zoom={10} style={{ height: "100%", width: "100%" }}>
-  <TileLayer
-    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-  />
-  
-  {/* Add the bounds fitter component */}
-  <MapBoundsFitter 
-    markers={allMarkers} 
+            {mapReady && (
+  <MapContainer 
     center={center} 
-    radiusMeters={radiusMeters} 
-  />
-  
-  {/* Search area circle */}
-  <Circle
-    center={center}
-    radius={radiusMeters}
-    color="blue"
-    fillColor="blue"
-    fillOpacity={0.1}
-  />
-  
-  {/* Center marker */}
-  <Marker position={center}>
-    <Popup>
-      <strong>Search Center: {query}</strong>
-      <br />
-      <span>Radius: {radius} miles</span>
-    </Popup>
-  </Marker>
-  
-  {/* City and town markers */}
-  {allMarkers.map((m) => (
-    <Marker 
-      key={`${m.kind}-${m.id}`} 
-      position={[m.lat, m.lon]}
-    >
+    zoom={2}  // Start with a world view zoom level
+    minZoom={2}  // Allow zooming out to see the whole world
+    maxZoom={18}  // Allow detailed zooming in
+    style={{ height: "100%", width: "100%" }}
+    worldCopyJump={true}  // Allow continuous horizontal scrolling
+    zoomControl={true} 
+  >
+    <TileLayer
+      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+      noWrap={false}  // Allow world wrapping
+    />
+    
+    {/* Search area circle */}
+    <Circle
+      center={center}
+      radius={radiusMeters}
+      color="blue"
+      fillColor="blue"
+      fillOpacity={0.1}
+    />
+    
+    {/* Center marker */}
+    <Marker position={center}>
       <Popup>
-        <strong>{m.name}</strong>
+        <strong>Search Center: {query}</strong>
         <br />
-        <span>Type: {m.type}</span>
-        <br />
-        <span>{(m.distance / 1609.344).toFixed(1)} miles away</span>
-        <br />
-        <Link 
-          href={`/how-far-is-${createSlug(m.name)}-from-me`} 
-          className="popup-link"
-        >
-          View details
-        </Link>
+        <span>Radius: {radius} miles</span>
       </Popup>
     </Marker>
-  ))}
-</MapContainer>
-              )}
+    
+    {/* City and town markers */}
+    {allMarkers.map((m) => (
+      <Marker 
+        key={`${m.kind}-${m.id}`} 
+        position={[m.lat, m.lon]}
+      >
+        <Popup>
+          <strong>{m.name}</strong>
+          <br />
+          <span>Type: {m.type}</span>
+          <br />
+          <span>{(m.distance / 1609.344).toFixed(1)} miles away</span>
+          <br />
+          <Link 
+            href={`/how-far-is-${createSlug(m.name)}-from-me`} 
+            className="popup-link"
+          >
+            View details
+          </Link>
+        </Popup>
+      </Marker>
+    ))}
+  </MapContainer>
+)}
+              
             </div>
           </section>
         </>

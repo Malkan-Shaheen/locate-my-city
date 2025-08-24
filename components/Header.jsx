@@ -237,7 +237,7 @@ const router = useRouter();
         <div className="container">
           <div className="header-content">
 
-           <button class="header-btn"
+           <button className="header-btn"
       onClick={() => router.push("/")}
       
     >
