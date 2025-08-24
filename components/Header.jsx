@@ -228,6 +228,13 @@ const router = useRouter();
           }
           
         }
+          .header-btn h2{
+          color: white; 
+          letter-spacing: 1px;
+          font-size: 1.2rem;
+          margin: 0;
+          font-weight: 700;
+          }
       `}</style>
 
       <nav aria-label="Skip navigation">

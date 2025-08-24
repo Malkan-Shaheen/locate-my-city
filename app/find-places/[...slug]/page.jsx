@@ -599,6 +599,7 @@ function ResultsContent() {
                       <Link 
                         key={`city-${c.id}`} 
                         href={`/how-far-is-${createSlug(c.name)}-from-me`} 
+                        target="_blank" 
                         className="result-link"
                       >
                         <div className="result-section">
@@ -647,6 +648,7 @@ function ResultsContent() {
                       <Link 
                         key={`town-${t.id}`} 
                         href={`/how-far-is-${createSlug(t.name)}-from-me`}
+                        target="_blank"
                         className="result-link"
                       >
                         <div className="result-section">
@@ -730,6 +732,7 @@ function ResultsContent() {
           <br />
           <Link 
             href={`/how-far-is-${createSlug(m.name)}-from-me`} 
+            target="_blank"
             className="popup-link"
           >
             View details
