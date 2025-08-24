@@ -194,6 +194,7 @@ async function callOverpassWithChunking(lat, lon, radius, qBuilder, onDataChunk 
   
   return { elements: all };
 }
+
 // Process data in chunks for progressive loading
 function processChunk(elements, centerLat, centerLon, radius) {
   const items = [];
@@ -206,7 +207,13 @@ function processChunk(elements, centerLat, centerLon, radius) {
 
     if (latNum == null || lonNum == null) continue;
 
+    // Get name and English name if available
     const name = tags.name || "Unnamed settlement";
+    const nameEn = tags["name:en"] || null;
+    
+    // Format display name with English name in brackets if available and different
+    const displayName = nameEn && nameEn !== name ? `${name} (${nameEn})` : name;
+    
     const placeType = tags.place || "settlement";
 
     // Skip if this is a duplicate
@@ -225,7 +232,8 @@ function processChunk(elements, centerLat, centerLon, radius) {
 
     items.push({
       id: placeId,
-      name,
+      name: displayName, // Use the formatted display name
+      originalName: name, // Keep original name for linking
       type: placeType,
       lat: Number(latNum),
       lon: Number(lonNum),
@@ -271,29 +279,6 @@ async function fetchTownsDirectly(lat, lon, radius, onDataChunk) {
   } catch (e) {
     console.error("Error in fetchTownsDirectly:", e);
     throw new Error("Failed to fetch towns: " + e.message);
-  }
-}
-
-// Function to convert non-English city names to English
-async function translateCityName(name) {
-  try {
-    // If the name contains only ASCII characters, assume it's already in English
-    if (/^[\x00-\x7F]*$/.test(name)) {
-      return name;
-    }
-    
-    // Try to translate using a simple API (you might want to use a proper translation service)
-    const response = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(name)}&langpair=auto|en`);
-    const data = await response.json();
-    
-    if (data.responseData && data.responseData.translatedText) {
-      return data.responseData.translatedText;
-    }
-    
-    return name; // Fallback to original name if translation fails
-  } catch (error) {
-    console.error("Translation error:", error);
-    return name; // Fallback to original name
   }
 }
 
@@ -549,7 +534,7 @@ function ResultsContent() {
                     {visibleCities.map((c) => (
                       <Link 
                         key={`city-${c.id}`} 
-                        href={`/how-far-is-${createSlug(c.name)}-from-me`}
+                        href={`/how-far-is-${createSlug(c.name)}-from-me`} 
                         className="result-link"
                       >
                         <div className="result-section">
@@ -678,7 +663,7 @@ function ResultsContent() {
         <span>{(m.distance / 1609.344).toFixed(1)} miles away</span>
         <br />
         <Link 
-          href={`/how-far-is-${createSlug(m.name)}-from-me`}
+          href={`/how-far-is-${createSlug(m.name)}-from-me`} 
           className="popup-link"
         >
           View details
