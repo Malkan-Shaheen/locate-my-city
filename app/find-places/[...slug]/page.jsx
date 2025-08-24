@@ -96,41 +96,25 @@ function MapBoundsFitter({ markers, center, radiusMeters }) {
   useEffect(() => {
     if (map && typeof window !== 'undefined' && window.L) {
       const L = window.L;
-      
-      // Create a group of all items that should be visible
       const itemsToFit = [];
-      
-      // Add the center point (search location)
       itemsToFit.push(L.latLng(center[0], center[1]));
-      
-      // Add all markers
       markers.forEach(marker => {
         itemsToFit.push(L.latLng(marker.lat, marker.lon));
       });
-      
-      // If we have items to fit, adjust the map view
       if (itemsToFit.length > 0) {
         try {
-          // Create a bounds that contains all items
           const bounds = L.latLngBounds(itemsToFit);
-          
-          // If we have a search radius, include it in the bounds calculation
           if (radiusMeters && radiusMeters > 0) {
             const circle = L.circle(center, { radius: radiusMeters });
             const circleBounds = circle.getBounds();
-            
-            // Extend the bounds to include the search area circle
             if (circleBounds.isValid()) {
               bounds.extend(circleBounds);
             }
           }
-          
-          // Check if bounds are valid before fitting
           if (bounds.isValid()) {
-            // Fit the map to the bounds with some padding
             map.fitBounds(bounds, { 
-              padding: [50, 50], // Add padding so markers aren't at the very edge
-              maxZoom: 12 // Optional: Limit maximum zoom level
+              padding: [50, 50],
+              maxZoom: 12
             });
           }
         } catch (error) {
@@ -143,116 +127,96 @@ function MapBoundsFitter({ markers, center, radiusMeters }) {
   return null;
 }
 
-async function callOverpassWithChunking(lat, lon, radius, qBuilder, onDataChunk = null) {
+// ✅ global dedupe set
+const seenPlaceNames = new Set();
+
+async function callOverpassWithChunking(lat, lon, radius, qBuilder, onDataChunk = null, query = "") {
   console.log("callOverpassWithChunking called with:", {lat, lon, radius});
   
-  // if radius ≤ 300km, single query
   if (radius <= 300000) {
     const q = qBuilder(lat, lon, radius);
     const result = await callOverpassQuery(q);
-    
-    // Process and emit data immediately if callback provided
     if (onDataChunk && result?.elements) {
-      const processed = processChunk(result.elements, lat, lon, radius);
+      const processed = processChunk(result.elements, lat, lon, radius, query);
       if (processed.length > 0) {
         onDataChunk(processed);
       }
     }
-    
     return result;
   }
 
-  // otherwise split into smaller steps for progressive loading
-  const step = 100000; // Reduced from 250000 for faster initial results
+  const step = 100000;
   let start = 0;
   const all = [];
   
   while (start < radius) {
     const end = Math.min(start + step, radius);
     const q = qBuilder(lat, lon, end);
-    
     try {
       const json = await callOverpassQuery(q);
       if (json?.elements) {
         all.push(...json.elements);
-        
-        // Process and emit data as it arrives
         if (onDataChunk) {
-          const processed = processChunk(json.elements, lat, lon, end);
+          const processed = processChunk(json.elements, lat, lon, end, query);
           if (processed.length > 0) {
             onDataChunk(processed);
           }
         }
       }
     } catch (e) {
-      // Continue with next chunk if one fails
       console.error("Chunk failed:", e);
     }
-    
     start = end;
   }
   
   return { elements: all };
 }
 
-// Process data in chunks for progressive loading
-function processChunk(elements, centerLat, centerLon, radius) {
+// ✅ fixed processChunk
+function processChunk(elements, centerLat, centerLon, radius, query = "") {
   const items = [];
-  const seenIds = new Set();
-  
   for (const e of elements) {
     const tags = e.tags || {};
     const latNum = e.lat ?? e.center?.lat;
     const lonNum = e.lon ?? e.center?.lon;
-
     if (latNum == null || lonNum == null) continue;
 
-    // Get name and English name if available
     const name = tags.name || "Unnamed settlement";
     const nameEn = tags["name:en"] || null;
-    
-    // Format display name with English name in brackets if available and different
     const displayName = nameEn && nameEn !== name ? `${name} (${nameEn})` : name;
-    
     const placeType = tags.place || "settlement";
 
-    // Skip if this is a duplicate
-    const placeId = `${name.toLowerCase()}_${latNum.toFixed(4)}_${lonNum.toFixed(4)}`;
-    if (seenIds.has(placeId)) continue;
-    seenIds.add(placeId);
+    // ❌ Skip if name matches query
+    if (query && name.toLowerCase().includes(query.toLowerCase())) continue;
+    // ❌ Skip duplicates globally
+    if (seenPlaceNames.has(displayName.toLowerCase())) continue;
+    seenPlaceNames.add(displayName.toLowerCase());
 
-    // Calculate distance and filter
     const cLat = Number(centerLat), cLon = Number(centerLon);
     const dx = (Number(lonNum) - cLon) * 111320 * Math.cos((cLat * Math.PI) / 180);
     const dy = (Number(latNum) - cLat) * 110540;
     const distance = Math.sqrt(dx * dx + dy * dy);
-
-    // Filter out the search area itself and places outside radius
     if (distance < 1000 || distance > radius) continue;
 
     items.push({
-      id: placeId,
-      name: displayName, // Use the formatted display name
-      originalName: name, // Keep original name for linking
+      id: `${displayName.toLowerCase()}_${latNum.toFixed(4)}_${lonNum.toFixed(4)}`,
+      name: displayName,
+      originalName: name,
       type: placeType,
       lat: Number(latNum),
       lon: Number(lonNum),
       distance,
     });
   }
-
   return items;
 }
 
-// Modified fetch functions for true progressive loading
-async function fetchCitiesDirectly(lat, lon, radius, onDataChunk) {
+async function fetchCitiesDirectly(lat, lon, radius, onDataChunk, query) {
   console.log("fetchCitiesDirectly called with:", {lat, lon, radius});
   try {
-    // Pass the onDataChunk callback to process data as it arrives
-    const json = await callOverpassWithChunking(lat, lon, radius, buildCitiesQuery, onDataChunk);
+    const json = await callOverpassWithChunking(lat, lon, radius, buildCitiesQuery, onDataChunk, query);
     const elements = json.elements || [];
     console.log("Total city elements from API:", elements.length);
-    
     return elements.length;
   } catch (e) {
     console.error("Error in fetchCitiesDirectly:", e);
@@ -260,21 +224,17 @@ async function fetchCitiesDirectly(lat, lon, radius, onDataChunk) {
   }
 }
 
-async function fetchTownsDirectly(lat, lon, radius, onDataChunk) {
+async function fetchTownsDirectly(lat, lon, radius, onDataChunk, query) {
   console.log("fetchTownsDirectly called with:", {lat, lon, radius});
   try {
-    // Pass the onDataChunk callback to process data as it arrives
     const json = await callOverpassWithChunking(lat, lon, radius, buildTownsQuery, (chunk) => {
-      // Filter out cities from towns
       const filteredChunk = chunk.filter(item => item.type !== "city");
       if (filteredChunk.length > 0) {
         onDataChunk(filteredChunk);
       }
-    });
-    
+    }, query);
     const elements = json.elements || [];
     console.log("Total town elements from API:", elements.length);
-    
     return elements.length;
   } catch (e) {
     console.error("Error in fetchTownsDirectly:", e);
