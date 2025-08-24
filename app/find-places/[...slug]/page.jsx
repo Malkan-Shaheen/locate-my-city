@@ -89,35 +89,57 @@ async function callOverpassQuery(q) {
   throw new Error("All Overpass endpoints failed");
 }
 
-async function callOverpassWithChunking(lat, lon, radius, qBuilder) {
+async function callOverpassWithChunking(lat, lon, radius, qBuilder, onDataChunk = null) {
   console.log("callOverpassWithChunking called with:", {lat, lon, radius});
+  
   // if radius ≤ 300km, single query
   if (radius <= 300000) {
     const q = qBuilder(lat, lon, radius);
-    return callOverpassQuery(q);
+    const result = await callOverpassQuery(q);
+    
+    // Process and emit data immediately if callback provided
+    if (onDataChunk && result?.elements) {
+      const processed = processChunk(result.elements, lat, lon, radius);
+      if (processed.length > 0) {
+        onDataChunk(processed);
+      }
+    }
+    
+    return result;
   }
 
-  // otherwise split into 250km steps
-  const step = 250000;
+  // otherwise split into smaller steps for progressive loading
+  const step = 100000; // Reduced from 250000 for faster initial results
   let start = 0;
   const all = [];
+  
   while (start < radius) {
     const end = Math.min(start + step, radius);
     const q = qBuilder(lat, lon, end);
+    
     try {
       const json = await callOverpassQuery(q);
       if (json?.elements) {
         all.push(...json.elements);
+        
+        // Process and emit data as it arrives
+        if (onDataChunk) {
+          const processed = processChunk(json.elements, lat, lon, end);
+          if (processed.length > 0) {
+            onDataChunk(processed);
+          }
+        }
       }
     } catch (e) {
       // Continue with next chunk if one fails
       console.error("Chunk failed:", e);
     }
+    
     start = end;
   }
+  
   return { elements: all };
 }
-
 // Process data in chunks for progressive loading
 function processChunk(elements, centerLat, centerLon, radius) {
   const items = [];
@@ -164,26 +186,12 @@ function processChunk(elements, centerLat, centerLon, radius) {
 async function fetchCitiesDirectly(lat, lon, radius, onDataChunk) {
   console.log("fetchCitiesDirectly called with:", {lat, lon, radius});
   try {
-    const json = await callOverpassWithChunking(lat, lon, radius, buildCitiesQuery);
+    // Pass the onDataChunk callback to process data as it arrives
+    const json = await callOverpassWithChunking(lat, lon, radius, buildCitiesQuery, onDataChunk);
     const elements = json.elements || [];
-    console.log("Raw city elements from API:", elements.length);
+    console.log("Total city elements from API:", elements.length);
     
-    // Process data in chunks for true progressive loading
-    const chunkSize = 20;
-    for (let i = 0; i < elements.length; i += chunkSize) {
-      const chunk = elements.slice(i, i + chunkSize);
-      const processedChunk = processChunk(chunk, lat, lon, radius);
-      
-      if (processedChunk.length > 0) {
-        onDataChunk(processedChunk);
-      }
-      
-      // Small delay to allow UI updates between chunks
-      await new Promise(resolve => setTimeout(resolve, 30));
-    }
-
     return elements.length;
-
   } catch (e) {
     console.error("Error in fetchCitiesDirectly:", e);
     throw new Error("Failed to fetch cities: " + e.message);
@@ -193,29 +201,19 @@ async function fetchCitiesDirectly(lat, lon, radius, onDataChunk) {
 async function fetchTownsDirectly(lat, lon, radius, onDataChunk) {
   console.log("fetchTownsDirectly called with:", {lat, lon, radius});
   try {
-    const json = await callOverpassWithChunking(lat, lon, radius, buildTownsQuery);
-    const elements = json.elements || [];
-    console.log("Raw town elements from API:", elements.length);
-    
-    // Process data in chunks for true progressive loading
-    const chunkSize = 20;
-    for (let i = 0; i < elements.length; i += chunkSize) {
-      const chunk = elements.slice(i, i + chunkSize);
-      const processedChunk = processChunk(chunk, lat, lon, radius);
-      
+    // Pass the onDataChunk callback to process data as it arrives
+    const json = await callOverpassWithChunking(lat, lon, radius, buildTownsQuery, (chunk) => {
       // Filter out cities from towns
-      const filteredChunk = processedChunk.filter(item => item.type !== "city");
-      
+      const filteredChunk = chunk.filter(item => item.type !== "city");
       if (filteredChunk.length > 0) {
         onDataChunk(filteredChunk);
       }
-      
-      // Small delay to allow UI updates between chunks
-      await new Promise(resolve => setTimeout(resolve, 30));
-    }
-
+    });
+    
+    const elements = json.elements || [];
+    console.log("Total town elements from API:", elements.length);
+    
     return elements.length;
-
   } catch (e) {
     console.error("Error in fetchTownsDirectly:", e);
     throw new Error("Failed to fetch towns: " + e.message);
