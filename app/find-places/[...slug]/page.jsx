@@ -804,6 +804,13 @@ export default function ResultsPage() {
   return (
     <div className="page-results">
       <Header />
+      <Head>
+        <title>{`Find places`}</title>
+        <meta name="description" content={`Nearby places`} />
+     <link rel="preload" href="/globals.css" as="style" />
+     <meta name="robots" content="index, follow">
+</meta>
+      </Head>
       <main id="main-content">
         <section className="hero-banner" aria-labelledby="main-heading" aria-describedby="hero-desc">
           <div className="content-container">

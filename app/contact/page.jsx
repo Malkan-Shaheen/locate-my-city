@@ -16,6 +16,7 @@ export default function ContactPage() {
 
       <div className="contact-page">
         <Header />
+        
         <main>
         {/* Hero Section */}
         <section className="contact-hero">

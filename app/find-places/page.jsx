@@ -80,7 +80,15 @@ export default function FindPlacesPage() {
   };
 
   return (
+    
     <div className="page2">
+      <Head>
+              <title>{`Find places`}</title>
+              <meta name="description" content={`NEarby Places`} />
+           <link rel="preload" href="/globals.css" as="style" />
+           <meta name="robots" content="index, follow">
+      </meta>
+            </Head>
       <Header />
 
       <main className="main2">

@@ -104,6 +104,9 @@ export default function ColorLocationsExplorer() {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet" />
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+     <meta name="robots" content="index, follow">
+</meta>
+     
       </Head>
 
       <header className="site-header">

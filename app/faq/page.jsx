@@ -43,6 +43,13 @@ export default function FAQPage() {
   return (
     <div>
       <Header />
+      <Head>
+              <title>{`faqs`}</title>
+              <meta name="description" content={`faqs`} />
+           <link rel="preload" href="/globals.css" as="style" />
+           <meta name="robots" content="index, follow">
+      </meta>
+            </Head>
       <main className="faq-page">
         <h1 className="faq-title">Frequently Asked Questions</h1>
         <div className="faq-list">
