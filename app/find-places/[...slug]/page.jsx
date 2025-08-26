@@ -8,13 +8,9 @@ import Header from "../../../components/Header";
 import Footer from "../../../components/Footer";
 import "leaflet/dist/leaflet.css";
 
-// Dynamically import react-leaflet (avoids SSR issues)
+// Dynamically import react-leaflet components
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
-  { ssr: false }
-);
-const useMap = dynamic(
-  () => import("react-leaflet").then((m) => m.useMap),
   { ssr: false }
 );
 const TileLayer = dynamic(
@@ -33,6 +29,9 @@ const Circle = dynamic(
   () => import("react-leaflet").then((m) => m.Circle),
   { ssr: false }
 );
+
+// ✅ import useMap directly (not dynamically)
+import { useMap } from "react-leaflet";
 
 const milesToMeters = (mi) => Number(mi) * 1609.344;
 
@@ -124,41 +123,49 @@ async function callOverpassQuery(q, useCache = true) {
   throw new Error("All Overpass endpoints failed");
 }
 
-// Add this component to handle map bounds fitting
-function MapBoundsFitter({ markers, center, radiusMeters }) {
+// ✅ Fixed MapBoundsFitter
+function MapBoundsFitter({ center, radiusMeters, markers }) {
   const map = useMap();
-  
+
   useEffect(() => {
-    if (map && typeof window !== 'undefined' && window.L) {
-      const L = window.L;
-      const itemsToFit = [];
-      itemsToFit.push(L.latLng(center[0], center[1]));
-      markers.forEach(marker => {
-        itemsToFit.push(L.latLng(marker.lat, marker.lon));
-      });
-      if (itemsToFit.length > 0) {
-        try {
-          const bounds = L.latLngBounds(itemsToFit);
-          if (radiusMeters && radiusMeters > 0) {
-            const circle = L.circle(center, { radius: radiusMeters });
-            const circleBounds = circle.getBounds();
-            if (circleBounds.isValid()) {
-              bounds.extend(circleBounds);
-            }
-          }
-          if (bounds.isValid()) {
-            map.fitBounds(bounds, { 
-              padding: [50, 50],
-              maxZoom: 12
-            });
-          }
-        } catch (error) {
-          console.error("Error fitting map bounds:", error);
-        }
+    if (!map || !center || !radiusMeters) return;
+
+    const L = window.L;
+    if (!L) return;
+
+    try {
+      const circle = L.circle(L.latLng(center[0], center[1]), { radius: radiusMeters });
+      let bounds = circle.getBounds();
+
+      if (markers?.length > 0) {
+        const markerBounds = L.latLngBounds(markers.map((m) => [m.lat, m.lon]));
+        bounds = bounds.extend(markerBounds);
       }
+
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [20, 20], maxZoom: 15 });
+      } else {
+        map.setView(L.latLng(center[0], center[1]), 10);
+      }
+    } catch (e) {
+      console.error("Error fitting map bounds:", e);
+      map.setView(L.latLng(center[0], center[1]), 10);
     }
-  }, [map, markers, center, radiusMeters]);
-  
+  }, [map, center, radiusMeters, markers]);
+
+  return null;
+}
+
+// ✅ New: AutoPan immediately after geocode fetch
+function AutoPanToCenter({ center }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (map && center) {
+      map.setView(center, 10, { animate: true });
+    }
+  }, [map, center]);
+
   return null;
 }
 
@@ -304,35 +311,6 @@ async function fetchTownsDirectly(lat, lon, radius, onDataChunk, query) {
     console.error("Error in fetchTownsDirectly:", e);
     throw new Error("Failed to fetch towns: " + e.message);
   }
-}
-
-// Component to adjust map view to fit the circle
-function MapFocusController({ center, radiusMeters }) {
-  const map = useMap();
-  
-  useEffect(() => {
-    if (center && radiusMeters && map && typeof window !== 'undefined' && window.L) {
-      // Use a timeout to ensure the map is fully initialized
-      const timer = setTimeout(() => {
-        try {
-          const L = window.L;
-          const circle = L.circle(center, { radius: radiusMeters });
-          const bounds = circle.getBounds();
-          
-          // Check if bounds are valid before fitting
-          if (bounds.isValid()) {
-            map.fitBounds(bounds, { padding: [20, 20] });
-          }
-        } catch (error) {
-          console.error("Error fitting map bounds:", error);
-        }
-      }, 100);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [center, radiusMeters, map]);
-  
-  return null;
 }
 
 function ResultsContent() {
@@ -683,67 +661,72 @@ function ResultsContent() {
 
           <section className="map-wrap">
             <div className="map">
-            {mapReady && (
-  <MapContainer 
-    center={center} 
-    zoom={2}  // Start with a world view zoom level
-    minZoom={2}  // Allow zooming out to see the whole world
-    maxZoom={18}  // Allow detailed zooming in
-    style={{ height: "100%", width: "100%" }}
-    worldCopyJump={true}  // Allow continuous horizontal scrolling
-    zoomControl={true} 
-  >
-    <TileLayer
-      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      noWrap={false}  // Allow world wrapping
-    />
-    
-    {/* Search area circle */}
-    <Circle
-      center={center}
-      radius={radiusMeters}
-      color="blue"
-      fillColor="blue"
-      fillOpacity={0.1}
-    />
-    
-    {/* Center marker */}
-    <Marker position={center}>
-      <Popup>
-        <strong>Search Center: {query}</strong>
-        <br />
-        <span>Radius: {radius} miles</span>
-      </Popup>
-    </Marker>
-    
-    {/* City and town markers */}
-    {allMarkers.map((m) => (
-      <Marker 
-        key={`${m.kind}-${m.id}`} 
-        position={[m.lat, m.lon]}
-      >
-        <Popup>
-          <strong>{m.name}</strong>
-          <br />
-          <span>Type: {m.type}</span>
-          <br />
-          <span>{(m.distance / 1609.344).toFixed(1)} miles away</span>
-          <br />
-          
-          <Link 
-            href={`/how-far-is-${createSlug(m.name)}-from-me`} 
-            target="_blank"
-            className="popup-link"
-          >
-            View details
-          </Link>
-        </Popup>
-      </Marker>
-    ))}
-  </MapContainer>
-)}
-              
+            {mapReady && center && (
+              <MapContainer 
+                center={center} 
+                zoom={10}
+                style={{ height: "100%", width: "100%" }}
+                zoomControl={true}
+              >
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                
+                {/* Search area circle */}
+                <Circle
+                  center={center}
+                  radius={radiusMeters}
+                  color="blue"
+                  fillColor="blue"
+                  fillOpacity={0.1}
+                />
+                
+                {/* Center marker */}
+                <Marker position={center}>
+                  <Popup>
+                    <strong>Search Center: {query}</strong>
+                    <br />
+                    <span>Radius: {radius} miles</span>
+                  </Popup>
+                </Marker>
+                
+                {/* City and town markers */}
+                {allMarkers.map((m) => (
+                  <Marker 
+                    key={`${m.kind}-${m.id}`} 
+                    position={[m.lat, m.lon]}
+                  >
+                    <Popup>
+                      <strong>{m.name}</strong>
+                      <br />
+                      <span>Type: {m.type}</span>
+                      <br />
+                      <span>{(m.distance / 1609.344).toFixed(1)} miles away</span>
+                      <br />
+                      
+                      <Link 
+                        href={`/how-far-is-${createSlug(m.name)}-from-me`} 
+                        target="_blank"
+                        className="popup-link"
+                      >
+                        View details
+                      </Link>
+                    </Popup>
+                  </Marker>
+                ))}
+                
+                {/* Auto-pan immediately after geocode */}
+                <AutoPanToCenter center={center} />
+                
+                {/* Map bounds fitter */}
+                <MapBoundsFitter 
+                  center={center} 
+                  radiusMeters={radiusMeters}
+                  markers={allMarkers}
+                />
+              </MapContainer>
+            )}
             </div>
           </section>
         </>

@@ -226,7 +226,6 @@ const router = useRouter();
           .logo h2 {
             display: none;
           }
-          
         }
           .header-btn h2{
           color: white; 
