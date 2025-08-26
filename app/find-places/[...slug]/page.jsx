@@ -43,38 +43,55 @@ function getCacheKey(lat, lon, radius, queryType) {
 }
 
 // Overpass API helper functions
-function buildCitiesQuery(lat, lon, radius) {
+function buildCitiesQuery(lat, lon, radius, countryCode = null) {
+  let areaFilter = "";
+  if (countryCode) {
+    areaFilter = `area["ISO3166-1"="${countryCode}"][admin_level=2];`;
+  }
+  
   return `
     [out:json][timeout:25];
+    ${areaFilter}
     (
-      node(around:${radius},${lat},${lon})["place"~"city"];
-      way(around:${radius},${lat},${lon})["place"~"city"];
-      relation(around:${radius},${lat},${lon})["place"~"city"];
+      node(around:${radius},${lat},${lon})["place"~"city"]${areaFilter ? `(area)` : ''};
+      way(around:${radius},${lat},${lon})["place"~"city"]${areaFilter ? `(area)` : ''};
+      relation(around:${radius},${lat},${lon})["place"~"city"]${areaFilter ? `(area)` : ''};
     );
     out center;
   `;
 }
 
-function buildTownsQuery(lat, lon, radius) {
+function buildTownsQuery(lat, lon, radius, countryCode = null) {
+  let areaFilter = "";
+  if (countryCode) {
+    areaFilter = `area["ISO3166-1"="${countryCode}"][admin_level=2];`;
+  }
+  
   return `
     [out:json][timeout:25];
+    ${areaFilter}
     (
-      node(around:${radius},${lat},${lon})["place"~"town"];
-      way(around:${radius},${lat},${lon})["place"~"town"];
-      relation(around:${radius},${lat},${lon})["place"~"town"];
+      node(around:${radius},${lat},${lon})["place"~"town"]${areaFilter ? `(area)` : ''};
+      way(around:${radius},${lat},${lon})["place"~"town"]${areaFilter ? `(area)` : ''};
+      relation(around:${radius},${lat},${lon})["place"~"town"]${areaFilter ? `(area)` : ''};
     );
     out center;
   `;
 }
 
-// Combined query for faster initial loading
-function buildCombinedQuery(lat, lon, radius) {
+function buildCombinedQuery(lat, lon, radius, countryCode = null) {
+  let areaFilter = "";
+  if (countryCode) {
+    areaFilter = `area["ISO3166-1"="${countryCode}"][admin_level=2];`;
+  }
+  
   return `
     [out:json][timeout:25];
+    ${areaFilter}
     (
-      node(around:${radius},${lat},${lon})["place"~"city|town"];
-      way(around:${radius},${lat},${lon})["place"~"city|town"];
-      relation(around:${radius},${lat},${lon})["place"~"city|town"];
+      node(around:${radius},${lat},${lon})["place"~"city|town"]${areaFilter ? `(area)` : ''};
+      way(around:${radius},${lat},${lon})["place"~"city|town"]${areaFilter ? `(area)` : ''};
+      relation(around:${radius},${lat},${lon})["place"~"city|town"]${areaFilter ? `(area)` : ''};
     );
     out center;
   `;
@@ -214,6 +231,8 @@ async function callOverpassWithChunking(lat, lon, radius, qBuilder, onDataChunk 
   return { elements: all };
 }
 
+
+
 // ✅ fixed processChunk
 function processChunk(elements, centerLat, centerLon, radius, query = "") {
   const items = [];
@@ -254,13 +273,14 @@ function processChunk(elements, centerLat, centerLon, radius, query = "") {
 }
 
 // New function to fetch initial data quickly
-async function fetchInitialSettlements(lat, lon, radius, onDataChunk, query) {
-  console.log("fetchInitialSettlements called with:", {lat, lon, radius});
+// Update the function signatures
+async function fetchInitialSettlements(lat, lon, radius, onDataChunk, query, countryCode) {
+  console.log("fetchInitialSettlements called with:", {lat, lon, radius, countryCode});
   try {
     // Use a smaller radius for initial quick results
     const initialRadius = Math.min(radius, 50000); // 50km max for initial fetch
     
-    const q = buildCombinedQuery(lat, lon, initialRadius);
+    const q = buildCombinedQuery(lat, lon, initialRadius, countryCode);
     const json = await callOverpassQuery(q, true); // Use cache for initial fetch
     
     if (json?.elements) {
@@ -282,10 +302,13 @@ async function fetchInitialSettlements(lat, lon, radius, onDataChunk, query) {
   }
 }
 
-async function fetchCitiesDirectly(lat, lon, radius, onDataChunk, query) {
-  console.log("fetchCitiesDirectly called with:", {lat, lon, radius});
+async function fetchCitiesDirectly(lat, lon, radius, onDataChunk, query, countryCode) {
+  console.log("fetchCitiesDirectly called with:", {lat, lon, radius, countryCode});
   try {
-    const json = await callOverpassWithChunking(lat, lon, radius, buildCitiesQuery, onDataChunk, query);
+    const json = await callOverpassWithChunking(lat, lon, radius, 
+      (lat, lon, rad) => buildCitiesQuery(lat, lon, rad, countryCode), 
+      onDataChunk, query
+    );
     const elements = json.elements || [];
     console.log("Total city elements from API:", elements.length);
     return elements.length;
@@ -295,15 +318,18 @@ async function fetchCitiesDirectly(lat, lon, radius, onDataChunk, query) {
   }
 }
 
-async function fetchTownsDirectly(lat, lon, radius, onDataChunk, query) {
-  console.log("fetchTownsDirectly called with:", {lat, lon, radius});
+async function fetchTownsDirectly(lat, lon, radius, onDataChunk, query, countryCode) {
+  console.log("fetchTownsDirectly called with:", {lat, lon, radius, countryCode});
   try {
-    const json = await callOverpassWithChunking(lat, lon, radius, buildTownsQuery, (chunk) => {
-      const filteredChunk = chunk.filter(item => item.type !== "city");
-      if (filteredChunk.length > 0) {
-        onDataChunk(filteredChunk);
-      }
-    }, query);
+    const json = await callOverpassWithChunking(lat, lon, radius, 
+      (lat, lon, rad) => buildTownsQuery(lat, lon, rad, countryCode), 
+      (chunk) => {
+        const filteredChunk = chunk.filter(item => item.type !== "city");
+        if (filteredChunk.length > 0) {
+          onDataChunk(filteredChunk);
+        }
+      }, query
+    );
     const elements = json.elements || [];
     console.log("Total town elements from API:", elements.length);
     return elements.length;
@@ -371,150 +397,156 @@ function ResultsContent() {
   }, []);
 
   // Fetch geo + cities + towns
-  useEffect(() => {
-    let isCancelled = false;
+// Fetch geo + cities + towns
+useEffect(() => {
+  let isCancelled = false;
 
-    async function fetchData() {
-      try {
-        setError("");
-        console.log("Starting data fetch for query:", query);
+  async function fetchData() {
+    try {
+      setError("");
+      console.log("Starting data fetch for query:", query);
 
-        if (!query) {
-          throw new Error("No location provided");
-        }
+      if (!query) {
+        throw new Error("No location provided");
+      }
 
-        // Fetch geocode
-        console.log("Fetching geocode for:", query);
-        const geoRes = await fetch(`/api/geocode?query=${encodeURIComponent(query)}`);
-        if (!geoRes.ok) throw new Error("Geocoding failed");
-        const g = await geoRes.json();
-        if (!g?.lat || !g?.lon) throw new Error("Location not found");
-        if (isCancelled) {
-          return;
-        }
+      // Fetch geocode
+      console.log("Fetching geocode for:", query);
+      const geoRes = await fetch(`/api/geocode?query=${encodeURIComponent(query)}`);
+      if (!geoRes.ok) throw new Error("Geocoding failed");
+      const g = await geoRes.json();
+      if (!g?.lat || !g?.lon) throw new Error("Location not found");
 
-        const lat = Number(g.lat);
-        const lon = Number(g.lon);
-        console.log("Geocode result:", g);
-        setGeo(g);
-        setCenter([lat, lon]);
+      // Extract country code from the response
+      const countryCode = g.country_code || null;
+      console.log("Country code detected:", countryCode);
 
-        // Clear previous data
-        setVisibleCities([]);
-        setVisibleTowns([]);
-        setAllCities([]);
-        setAllTowns([]);
+      if (isCancelled) {
+        return;
+      }
 
-        // First: Fetch initial results quickly with combined query
-        console.log("Starting initial combined fetch");
-        setLoadingCities(true);
-        setLoadingTowns(true);
-        
-        fetchInitialSettlements(lat, lon, radiusMeters, (data) => {
-          if (!isCancelled) {
-            console.log("Processing initial settlements:", data.cities.length, "cities,", data.towns.length, "towns");
-            
-            if (data.cities.length > 0) {
-              setVisibleCities(data.cities.sort((a, b) => a.distance - b.distance));
-              setAllCities(data.cities);
-            }
-            
-            if (data.towns.length > 0) {
-              setVisibleTowns(data.towns.sort((a, b) => a.distance - b.distance));
-              setAllTowns(data.towns);
-            }
-            
-            setInitialLoadComplete(true);
-            setLoadingCities(false);
-            setLoadingTowns(false);
+      const lat = Number(g.lat);
+      const lon = Number(g.lon);
+      console.log("Geocode result:", g);
+      setGeo(g);
+      setCenter([lat, lon]);
+
+      // Clear previous data
+      setVisibleCities([]);
+      setVisibleTowns([]);
+      setAllCities([]);
+      setAllTowns([]);
+
+      // First: Fetch initial results quickly with combined query
+      console.log("Starting initial combined fetch");
+      setLoadingCities(true);
+      setLoadingTowns(true);
+
+      fetchInitialSettlements(lat, lon, radiusMeters, (data) => {
+        if (!isCancelled) {
+          console.log("Processing initial settlements:", data.cities.length, "cities,", data.towns.length, "towns");
+          
+          if (data.cities.length > 0) {
+            setVisibleCities(data.cities.sort((a, b) => a.distance - b.distance));
+            setAllCities(data.cities);
           }
-        })
+          
+          if (data.towns.length > 0) {
+            setVisibleTowns(data.towns.sort((a, b) => a.distance - b.distance));
+            setAllTowns(data.towns);
+          }
+          
+          setInitialLoadComplete(true);
+          setLoadingCities(false);
+          setLoadingTowns(false);
+        }
+      }, query, countryCode) // Pass countryCode here
+      .then(totalCount => {
+        if (!isCancelled) {
+          console.log("Initial fetch completed:", totalCount, "items processed");
+        }
+      })
+      .catch(err => {
+        if (!isCancelled) {
+          console.error("Initial fetch error:", err);
+          // Continue with individual fetches even if initial fails
+        }
+      });
+
+      // Second: Fetch full results in background
+      if (radiusMeters > 50000) {
+        console.log("Starting full cities fetch in background");
+        setLoadingCities(true);
+        
+        fetchCitiesDirectly(lat, lon, radiusMeters, (citiesChunk) => {
+          if (!isCancelled) {
+            console.log("Processing cities chunk:", citiesChunk.length);
+            setVisibleCities(prev => {
+              const newCities = [...prev, ...citiesChunk];
+              // Sort by distance as we add new items
+              return newCities.sort((a, b) => a.distance - b.distance);
+            });
+            setAllCities(prev => [...prev, ...citiesChunk]);
+          }
+        }, query, countryCode) // Pass countryCode here
         .then(totalCount => {
           if (!isCancelled) {
-            console.log("Initial fetch completed:", totalCount, "items processed");
+            console.log("Cities fetch completed:", totalCount, "cities processed");
+            setLoadingCities(false);
           }
         })
         .catch(err => {
           if (!isCancelled) {
-            console.error("Initial fetch error:", err);
-            // Continue with individual fetches even if initial fails
+            console.error("Cities fetch error:", err);
+            setError("Failed to load cities: " + err.message);
+            setLoadingCities(false);
           }
         });
 
-        // Second: Fetch full results in background
-        if (radiusMeters > 50000) {
-          console.log("Starting full cities fetch in background");
-          setLoadingCities(true);
-          
-          fetchCitiesDirectly(lat, lon, radiusMeters, (citiesChunk) => {
-            if (!isCancelled) {
-              console.log("Processing cities chunk:", citiesChunk.length);
-              setVisibleCities(prev => {
-                const newCities = [...prev, ...citiesChunk];
-                // Sort by distance as we add new items
-                return newCities.sort((a, b) => a.distance - b.distance);
-              });
-              setAllCities(prev => [...prev, ...citiesChunk]);
-            }
-          })
-          .then(totalCount => {
-            if (!isCancelled) {
-              console.log("Cities fetch completed:", totalCount, "cities processed");
-              setLoadingCities(false);
-            }
-          })
-          .catch(err => {
-            if (!isCancelled) {
-              console.error("Cities fetch error:", err);
-              setError("Failed to load cities: " + err.message);
-              setLoadingCities(false);
-            }
-          });
+        console.log("Starting full towns fetch in background");
+        setLoadingTowns(true);
+        
+        fetchTownsDirectly(lat, lon, radiusMeters, (townsChunk) => {
+          if (!isCancelled) {
+            console.log("Processing towns chunk:", townsChunk.length);
+            setVisibleTowns(prev => {
+              const newTowns = [...prev, ...townsChunk];
+              // Sort by distance as we add new items
+              return newTowns.sort((a, b) => a.distance - b.distance);
+            });
+            setAllTowns(prev => [...prev, ...townsChunk]);
+          }
+        }, query, countryCode) // Pass countryCode here
+        .then(totalCount => {
+          if (!isCancelled) {
+            console.log("Towns fetch completed:", totalCount, "towns processed");
+            setLoadingTowns(false);
+          }
+        })
+        .catch(err => {
+          if (!isCancelled) {
+            console.error("Towns fetch error:", err);
+            setError("Failed to load towns: " + err.message);
+            setLoadingTowns(false);
+          }
+        });
+      }
 
-          console.log("Starting full towns fetch in background");
-          setLoadingTowns(true);
-          
-          fetchTownsDirectly(lat, lon, radiusMeters, (townsChunk) => {
-            if (!isCancelled) {
-              console.log("Processing towns chunk:", townsChunk.length);
-              setVisibleTowns(prev => {
-                const newTowns = [...prev, ...townsChunk];
-                // Sort by distance as we add new items
-                return newTowns.sort((a, b) => a.distance - b.distance);
-              });
-              setAllTowns(prev => [...prev, ...townsChunk]);
-            }
-          })
-          .then(totalCount => {
-            if (!isCancelled) {
-              console.log("Towns fetch completed:", totalCount, "towns processed");
-              setLoadingTowns(false);
-            }
-          })
-          .catch(err => {
-            if (!isCancelled) {
-              console.error("Towns fetch error:", err);
-              setError("Failed to load towns: " + err.message);
-              setLoadingTowns(false);
-            }
-          });
-        }
-
-      } catch (err) {
-        if (!isCancelled) {
-          console.error("Data fetch error:", err);
-          setError(err.message || "Something went wrong");
-        }
+    } catch (err) {
+      if (!isCancelled) {
+        console.error("Data fetch error:", err);
+        setError(err.message || "Something went wrong");
       }
     }
+  }
 
-    fetchData();
+  fetchData();
 
-    return () => {
-      isCancelled = true;
-      console.log("Cleanup: cancelling data fetch");
-    };
-  }, [query, radiusMeters]);
+  return () => {
+    isCancelled = true;
+    console.log("Cleanup: cancelling data fetch");
+  };
+}, [query, radiusMeters]);
 
   const allMarkers = useMemo(() => {
     const mk = [];
