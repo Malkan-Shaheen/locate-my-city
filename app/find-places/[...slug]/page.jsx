@@ -140,12 +140,39 @@ async function callOverpassQuery(q, useCache = true) {
   throw new Error("All Overpass endpoints failed");
 }
 
-// ✅ Fixed MapBoundsFitter
-function MapBoundsFitter({ center, radiusMeters, markers }) {
+// ✅ MapInteractionTracker component
+function MapInteractionTracker({ onInteraction }) {
   const map = useMap();
 
   useEffect(() => {
-    if (!map || !center || !radiusMeters) return;
+    if (!map) return;
+
+    const handleMove = () => {
+      onInteraction(true);
+    };
+
+    const handleZoom = () => {
+      onInteraction(true);
+    };
+
+    map.on('move', handleMove);
+    map.on('zoom', handleZoom);
+
+    return () => {
+      map.off('move', handleMove);
+      map.off('zoom', handleZoom);
+    };
+  }, [map, onInteraction]);
+
+  return null;
+}
+
+// ✅ Updated MapBoundsFitter
+function MapBoundsFitter({ center, radiusMeters, markers, shouldFit }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map || !center || !radiusMeters || !shouldFit) return;
 
     const L = window.L;
     if (!L) return;
@@ -168,7 +195,7 @@ function MapBoundsFitter({ center, radiusMeters, markers }) {
       console.error("Error fitting map bounds:", e);
       map.setView(L.latLng(center[0], center[1]), 10);
     }
-  }, [map, center, radiusMeters, markers]);
+  }, [map, center, radiusMeters, markers, shouldFit]);
 
   return null;
 }
@@ -340,6 +367,7 @@ async function fetchTownsDirectly(lat, lon, radius, onDataChunk, query, countryC
 }
 
 function ResultsContent() {
+  
   // Safely extract parameters with proper fallbacks
   const params = useParams();
   const slugArray = params?.slug || [];
@@ -359,6 +387,7 @@ function ResultsContent() {
 
   const query = location.trim();
   const radiusMeters = useMemo(() => milesToMeters(radius), [radius]);
+  const [userHasInteracted, setUserHasInteracted] = useState(false);
   console.log("Parsed parameters:", {query, radius, radiusMeters});
 
   const [center, setCenter] = useState([31.5204, 74.3587]); // Default to Islamabad
@@ -691,76 +720,80 @@ useEffect(() => {
             </div>
           </section>
 
-          <section className="map-wrap">
-            <div className="map">
-            {mapReady && center && (
-              <MapContainer 
-                center={center} 
-                zoom={10}
-                style={{ height: "100%", width: "100%" }}
-                zoomControl={true}
+         <section className="map-wrap">
+  <div className="map">
+    {mapReady && center && (
+      <MapContainer 
+        center={center} 
+        zoom={10}
+        style={{ height: "100%", width: "100%" }}
+        zoomControl={true}
+      >
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        
+        {/* Track user interactions */}
+        <MapInteractionTracker onInteraction={setUserHasInteracted} />
+        
+        {/* Search area circle */}
+        <Circle
+          center={center}
+          radius={radiusMeters}
+          color="blue"
+          fillColor="blue"
+          fillOpacity={0.1}
+        />
+        
+        {/* Center marker */}
+        <Marker position={center}>
+          <Popup>
+            <strong>Search Center: {query}</strong>
+            <br />
+            <span>Radius: {radius} miles</span>
+          </Popup>
+        </Marker>
+        
+        {/* City and town markers */}
+        {allMarkers.map((m) => (
+          <Marker 
+            key={`${m.kind}-${m.id}`} 
+            position={[m.lat, m.lon]}
+          >
+            <Popup>
+              <strong>{m.name}</strong>
+              <br />
+              <span>Type: {m.type}</span>
+              <br />
+              <span>{(m.distance / 1609.344).toFixed(1)} miles away</span>
+              <br />
+              
+              <Link 
+                href={`/how-far-is-${createSlug(m.name)}-from-me`} 
+                target="_blank"
+                className="popup-link"
               >
-                <TileLayer
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
-                
-                {/* Search area circle */}
-                <Circle
-                  center={center}
-                  radius={radiusMeters}
-                  color="blue"
-                  fillColor="blue"
-                  fillOpacity={0.1}
-                />
-                
-                {/* Center marker */}
-                <Marker position={center}>
-                  <Popup>
-                    <strong>Search Center: {query}</strong>
-                    <br />
-                    <span>Radius: {radius} miles</span>
-                  </Popup>
-                </Marker>
-                
-                {/* City and town markers */}
-                {allMarkers.map((m) => (
-                  <Marker 
-                    key={`${m.kind}-${m.id}`} 
-                    position={[m.lat, m.lon]}
-                  >
-                    <Popup>
-                      <strong>{m.name}</strong>
-                      <br />
-                      <span>Type: {m.type}</span>
-                      <br />
-                      <span>{(m.distance / 1609.344).toFixed(1)} miles away</span>
-                      <br />
-                      
-                      <Link 
-                        href={`/how-far-is-${createSlug(m.name)}-from-me`} 
-                        target="_blank"
-                        className="popup-link"
-                      >
-                        View details
-                      </Link>
-                    </Popup>
-                  </Marker>
-                ))}
-                
-                {/* Auto-pan immediately after geocode */}
-                <AutoPanToCenter center={center} />
-                
-                {/* Map bounds fitter */}
-                <MapBoundsFitter 
-                  center={center} 
-                  radiusMeters={radiusMeters}
-                  markers={allMarkers}
-                />
-              </MapContainer>
-            )}
-            </div>
-          </section>
+                View details
+              </Link>
+            </Popup>
+          </Marker>
+        ))}
+        
+        {/* Auto-pan immediately after geocode - only if user hasn't interacted */}
+        {!userHasInteracted && <AutoPanToCenter center={center} />}
+        
+        {/* Map bounds fitter - only fit if user hasn't interacted */}
+        <MapBoundsFitter 
+          center={center} 
+          radiusMeters={radiusMeters}
+          markers={allMarkers}
+          shouldFit={!userHasInteracted}
+        />
+      </MapContainer>
+    )}
+  </div>
+</section>
         </>
       )}
     </>
