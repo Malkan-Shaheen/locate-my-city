@@ -3,6 +3,7 @@ import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Header from "../../components/Header";
 import Footer from "../../components/Footer";
+import Head from "next/head";
 
 export default function FindPlacesPage() {
   const [location, setLocation] = useState("");
@@ -205,7 +206,7 @@ export default function FindPlacesPage() {
                     value={radius}
                     onChange={(e) => setRadius(e.target.value)}
                   >
-                    {[10, 15, 20, 25, 50, 75, 100, 150, 200, 500].map(
+                    {[10, 20, 25, 50, 75, 100].map(
                       (miles) => (
                         <option key={miles} value={miles}>
                           {miles} miles

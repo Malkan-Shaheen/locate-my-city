@@ -7,6 +7,36 @@ import Link from "next/link";
 import Header from "../../../components/Header";
 import Footer from "../../../components/Footer";
 import "leaflet/dist/leaflet.css";
+import Head from 'next/head';
+
+
+const faqs = [
+  {
+    id: 'faq1',
+    question: 'What information can I find on LocateMyCity?',
+    answer: 'LocateMyCity provides detailed insights about locations, including city/town status, distance measurements, and unique geographical traits.',
+  },
+  {
+    id: 'faq2',
+    question: 'How do I use the distance calculator?',
+    answer: 'Either allow location access or manually enter locations to calculate real-time distances in miles or kilometers.',
+  },
+  {
+    id: 'faq3',
+    question: 'Can I compare multiple locations?',
+    answer: 'Yes, our Location to Location tool lets you compare multiple destinations for effective trip planning.',
+  },
+  {
+    id: 'faq4',
+    question: 'How current is the location data?',
+    answer: 'We update weekly using verified sources including satellite imagery and government data.',
+  },
+  {
+    id: 'faq5',
+    question: 'What makes LocateMyCity different?',
+    answer: 'We highlight unique natural features and cover both abandoned and active locations with faster search and data accuracy than traditional tools.',
+  },
+];
 
 // Dynamically import react-leaflet components
 const MapContainer = dynamic(
@@ -394,6 +424,8 @@ function ResultsContent() {
   const [loadingCities, setLoadingCities] = useState(false);
   const [loadingTowns, setLoadingTowns] = useState(false);
   const [geo, setGeo] = useState(null);
+  const [activeFAQ, setActiveFAQ] = useState(null);
+
 
   // 👇 main states
   const [allCities, setAllCities] = useState([]);
@@ -792,6 +824,48 @@ useEffect(() => {
         />
       </MapContainer>
     )}
+  </div>
+</section>
+
+  <section className="faq-page" aria-labelledby="faq-section-title">
+  <h2 id="faq-section-title" className="faq-title">Frequently Asked Questions</h2>
+  <div className="faq-list">
+    {faqs.map((faq, index) => (
+      <div
+        key={faq.id}
+        className={`faq-card ${activeFAQ === index ? 'open' : ''}`}
+        role="button"
+        tabIndex={-1}  // Prevent focus
+        onMouseDown={(e) => e.preventDefault()} // Additional prevention
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setActiveFAQ(prev => {
+            const newValue = prev === index ? null : index;
+            console.log('Setting FAQ from', prev, 'to', newValue);
+            return newValue;
+          });
+          // Force maintain scroll position
+          requestAnimationFrame(() => window.scrollTo(0, window.scrollY));
+        }}
+        aria-expanded={activeFAQ === index}
+        aria-controls={`faq-answer-${faq.id}`}
+      >
+        <h3 className="faq-question">{faq.question}</h3>
+        <div
+          id={`faq-answer-${faq.id}`}
+          className="faq-answer"
+          role="region"
+          aria-labelledby={`faq-question-${faq.id}`}
+          hidden={activeFAQ !== index}
+          style={{
+            overflowAnchor: 'none' // Prevent scroll anchoring
+          }}
+        >
+          <p>{faq.answer}</p>
+        </div>
+      </div>
+    ))}
   </div>
 </section>
         </>
