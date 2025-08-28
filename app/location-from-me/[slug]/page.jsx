@@ -522,7 +522,117 @@ export default function DistanceResult() {
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
         <meta name="robots" content="index, follow" />
-      </Head>
+      
+      
+
+      <script
+    type="application/ld+json"
+    dangerouslySetInnerHTML={{
+      __html: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "@id": "https://locatemycity.com#organization",
+        "name": "LocateMyCity",
+        "url": "https://locatemycity.com",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://locatemycity.com/logo.png"
+        }
+      })
+    }}
+  />
+
+  {/* ✅ Structured Data - WebApplication */}
+  <script
+    type="application/ld+json"
+    dangerouslySetInnerHTML={{
+      __html: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Distance Calculator",
+        "url": "https://locatemycity.com/distance-calculator",
+        "operatingSystem": "Web",
+        "applicationCategory": "TravelApplication",
+        "applicationSubCategory": "Distance calculator",
+        "softwareVersion": "1.0.0",
+        "isAccessibleForFree": true,
+        "featureList": [
+          "Geolocation (HTML5)",
+          "Nominatim auto-complete",
+          "Haversine great-circle distance",
+          "Miles/Kilometers/Nautical Miles output",
+          "Deep links to result pages"
+        ],
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD",
+          "category": "free"
+        },
+        "publisher": { "@id": "https://locatemycity.com#organization" },
+        "potentialAction": {
+          "@type": "FindAction",
+          "name": "Calculate distance to destination",
+          "target": {
+            "@type": "EntryPoint",
+            "urlTemplate": "https://locatemycity.com/how-far-is-{destination}-from-me",
+            "inLanguage": "en",
+            "actionPlatform": [
+              "http://schema.org/DesktopWebPlatform",
+              "http://schema.org/MobileWebPlatform"
+            ]
+          },
+          "query-input": "required name=destination"
+        }
+      })
+    }}
+  />
+
+  {/* ✅ Structured Data - FAQPage */}
+  <script
+    type="application/ld+json"
+    dangerouslySetInnerHTML={{
+      __html: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "How does the distance calculator work?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "We calculate straight-line (great-circle) distances using the haversine formula. Driving times can differ based on route and traffic."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I use my current location?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Allow location access in your browser or type your city manually in the destination field."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Which units are supported?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "You can view distances in miles, kilometers, and nautical miles."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does this show routes or travel time?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "This tool focuses on straight-line distance. For turn-by-turn directions and travel time, use your preferred navigation app."
+            }
+          }
+        ]
+      })
+    }}
+  />
+</Head>
 
       <main className="distance-page">
         <div className="page-header">
