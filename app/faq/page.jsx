@@ -1,6 +1,7 @@
 'use client';
 import Header from '../../components/Header';
-import Footer from '../../components/Footer'
+import Footer from '../../components/Footer';
+import Head from 'next/head';
 
 import { useState } from 'react';
 import { FaChevronDown, FaChevronUp } from 'react-icons/fa';
