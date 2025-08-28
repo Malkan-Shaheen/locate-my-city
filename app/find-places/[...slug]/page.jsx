@@ -439,6 +439,9 @@ function ResultsContent() {
   const query = location.trim();
   const radiusMeters = useMemo(() => milesToMeters(radius), [radius]);
   const [userHasInteracted, setUserHasInteracted] = useState(false);
+  const radiusNum = parseInt(radius);
+  const NEXT_RADIUS = radiusNum + 10;
+  const PREV_RADIUS = Math.max(10, radiusNum - 10);
   
   console.log("Parsed parameters:", {query, radius, radiusMeters});
   
@@ -858,45 +861,140 @@ function ResultsContent() {
             </div>
           </section>
           
-          <section className="faq-page" aria-labelledby="faq-section-title">
-            <h2 id="faq-section-title" className="faq-title">Frequently Asked Questions</h2>
-            <div className="faq-list">
-              {faqs.map((faq, index) => (
-                <div
-                  key={faq.id}
-                  className={`faq-card ${activeFAQ === index ? 'open' : ''}`}
-                  role="button"
-                  tabIndex={-1} // Prevent focus
-                  onMouseDown={(e) => e.preventDefault()} // Additional prevention
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setActiveFAQ(prev => {
-                      const newValue = prev === index ? null : index;
-                      console.log('Setting FAQ from', prev, 'to', newValue);
-                      return newValue;
-                    });
-                    // Force maintain scroll position
-                    requestAnimationFrame(() => window.scrollTo(0, window.scrollY));
-                  }}
-                  aria-expanded={activeFAQ === index}
-                  aria-controls={`faq-answer-${faq.id}`}
-                >
-                  <h3 className="faq-question">{faq.question}</h3>
-                  <div
-                    id={`faq-answer-${faq.id}`}
-                    className="faq-answer"
-                    role="region"
-                    aria-labelledby={`faq-question-${faq.id}`}
-                    hidden={activeFAQ !== index}
-                    style={{ overflowAnchor: 'none' }} // Prevent scroll anchoring
-                  >
-                    <p>{faq.answer}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
+         <section className="faq-page container" aria-labelledby="faq-section-title">
+  <h2 id="faq-section-title" className="faq-title">Frequently Asked Questions about Places within {radius} Miles of {query}</h2>
+  
+  <div className="faq-list">
+    <div
+      className={`faq-card ${activeFAQ === 0 ? 'open' : ''}`}
+      role="button"
+      tabIndex={-1}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setActiveFAQ(prev => prev === 0 ? null : 0);
+        requestAnimationFrame(() => window.scrollTo(0, window.scrollY));
+      }}
+      aria-expanded={activeFAQ === 0}
+      aria-controls="faq-answer-1"
+    >
+      <h3 className="faq-question">What cities are within {radius} miles of {query}?</h3>
+      <div
+        id="faq-answer-1"
+        className="faq-answer"
+        role="region"
+        aria-labelledby="faq-question-1"
+        hidden={activeFAQ !== 0}
+        style={{ overflowAnchor: 'none' }}
+      >
+        <p>
+          {visibleCities.length > 0 ? (
+            <>Nearby cities include {visibleCities[0]?.name}, {visibleCities[1]?.name} and others within {radius} miles.</>
+          ) : (
+            <>There are no cities within this radius.</>
+          )}
+        </p>
+      </div>
+    </div>
+    
+    <div
+      className={`faq-card ${activeFAQ === 1 ? 'open' : ''}`}
+      role="button"
+      tabIndex={-1}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setActiveFAQ(prev => prev === 1 ? null : 1);
+        requestAnimationFrame(() => window.scrollTo(0, window.scrollY));
+      }}
+      aria-expanded={activeFAQ === 1}
+      aria-controls="faq-answer-2"
+    >
+      <h3 className="faq-question">What towns are within {radius} miles of {query}?</h3>
+      <div
+        id="faq-answer-2"
+        className="faq-answer"
+        role="region"
+        aria-labelledby="faq-question-2"
+        hidden={activeFAQ !== 1}
+        style={{ overflowAnchor: 'none' }}
+      >
+        <p>
+          {visibleTowns.length > 0 ? (
+            <>You'll find towns like {visibleTowns[0]?.name} and {visibleTowns[1]?.name}, all easily accessible from {query}.</>
+          ) : (
+            <>No towns were found in this radius.</>
+          )}
+        </p>
+      </div>
+    </div>
+    
+    <div
+      className={`faq-card ${activeFAQ === 2 ? 'open' : ''}`}
+      role="button"
+      tabIndex={-1}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setActiveFAQ(prev => prev === 2 ? null : 2);
+        requestAnimationFrame(() => window.scrollTo(0, window.scrollY));
+      }}
+      aria-expanded={activeFAQ === 2}
+      aria-controls="faq-answer-3"
+    >
+      <h3 className="faq-question">How do you calculate the distances?</h3>
+      <div
+        id="faq-answer-3"
+        className="faq-answer"
+        role="region"
+        aria-labelledby="faq-question-3"
+        hidden={activeFAQ !== 2}
+        style={{ overflowAnchor: 'none' }}
+      >
+        <p>We use the great-circle formula ("as the crow flies") from {query} to each place. Driving times may differ depending on roads and traffic.</p>
+      </div>
+    </div>
+    
+    <div
+      className={`faq-card ${activeFAQ === 3 ? 'open' : ''}`}
+      role="button"
+      tabIndex={-1}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setActiveFAQ(prev => prev === 3 ? null : 3);
+        requestAnimationFrame(() => window.scrollTo(0, window.scrollY));
+      }}
+      aria-expanded={activeFAQ === 3}
+      aria-controls="faq-answer-4"
+    >
+      <h3 className="faq-question">Can I search a different radius?</h3>
+      <div
+        id="faq-answer-4"
+        className="faq-answer"
+        role="region"
+        aria-labelledby="faq-question-4"
+        hidden={activeFAQ !== 3}
+        style={{ overflowAnchor: 'none' }}
+      >
+        <p>
+          Yes! You can expand your search to{" "}
+          <a href={`/places-${NEXT_RADIUS}-miles-from-${createSlug(query)}`}>
+            {NEXT_RADIUS} miles
+          </a>{" "}
+          or shrink it to{" "}
+          <a href={`/places-${PREV_RADIUS}-miles-from-${createSlug(query)}`}>
+            {PREV_RADIUS} miles
+          </a>.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
         </>
       )}
     </>
