@@ -861,7 +861,7 @@ function ResultsContent() {
             </div>
           </section>
           
-         <section className="faq-page container" aria-labelledby="faq-section-title">
+         <section className="faq-page container" style={{ marginBottom: '60px' }} aria-labelledby="faq-section-title">
   <h2 id="faq-section-title" className="faq-title">Frequently Asked Questions about Places within {radius} Miles of {query}</h2>
   
   <div className="faq-list">
@@ -957,42 +957,83 @@ function ResultsContent() {
         <p>We use the great-circle formula ("as the crow flies") from {query} to each place. Driving times may differ depending on roads and traffic.</p>
       </div>
     </div>
-    
     <div
-      className={`faq-card ${activeFAQ === 3 ? 'open' : ''}`}
-      role="button"
-      tabIndex={-1}
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setActiveFAQ(prev => prev === 3 ? null : 3);
-        requestAnimationFrame(() => window.scrollTo(0, window.scrollY));
-      }}
-      aria-expanded={activeFAQ === 3}
-      aria-controls="faq-answer-4"
-    >
-      <h3 className="faq-question">Can I search a different radius?</h3>
-      <div
-        id="faq-answer-4"
-        className="faq-answer"
-        role="region"
-        aria-labelledby="faq-question-4"
-        hidden={activeFAQ !== 3}
-        style={{ overflowAnchor: 'none' }}
-      >
-        <p>
-          Yes! You can expand your search to{" "}
-          <a href={`/places-${NEXT_RADIUS}-miles-from-${createSlug(query)}`}>
-            {NEXT_RADIUS} miles
-          </a>{" "}
-          or shrink it to{" "}
-          <a href={`/places-${PREV_RADIUS}-miles-from-${createSlug(query)}`}>
-            {PREV_RADIUS} miles
-          </a>.
-        </p>
-      </div>
-    </div>
+  className={`faq-card ${activeFAQ === 3 ? "open" : ""}`}
+  role="button"
+  tabIndex={-1}
+  onMouseDown={(e) => e.preventDefault()}
+  onClick={(e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setActiveFAQ((prev) => (prev === 3 ? null : 3));
+    requestAnimationFrame(() => window.scrollTo(0, window.scrollY));
+  }}
+  aria-expanded={activeFAQ === 3}
+  aria-controls="faq-answer-4"
+>
+  <h3 className="faq-question">Can I search a different radius?</h3>
+  <div
+    id="faq-answer-4"
+    className="faq-answer"
+    role="region"
+    aria-labelledby="faq-question-4"
+    hidden={activeFAQ !== 3}
+    style={{ overflowAnchor: "none" }}
+  >
+    {(() => {
+      const radiusOptions = [5,10, 20, 25, 50, 75, 100,110 ];
+      const currentIndex = radiusOptions.indexOf(parseInt(radius));
+      const prevRadius =
+        currentIndex > 0 ? radiusOptions[currentIndex - 1] : null;
+      const nextRadius =
+        currentIndex < radiusOptions.length - 1
+          ? radiusOptions[currentIndex + 1]
+          : null;
+      const slug = createSlug(query);
+
+      if (prevRadius && nextRadius) {
+        return (
+          <p>
+            Yes! You can expand your search to{" "}
+            <Link href={`/places-${nextRadius}-miles-from-${slug}`}>
+              {nextRadius} miles
+            </Link>{" "}
+            or shrink it to{" "}
+            <Link href={`/places-${prevRadius}-miles-from-${slug}`}>
+              {prevRadius} miles
+            </Link>
+            .
+          </p>
+        );
+      } else if (prevRadius) {
+        return (
+          <p>
+            Yes! You can shrink your search to{" "}
+            <Link href={`/places-${prevRadius}-miles-from-${slug}`}>
+              {prevRadius} miles
+            </Link>
+            .
+          </p>
+        );
+      } else if (nextRadius) {
+        return (
+          <p>
+            Yes! You can expand your search to{" "}
+            <Link href={`/places-${nextRadius}-miles-from-${slug}`}>
+              {nextRadius} miles
+            </Link>
+            .
+          </p>
+        );
+      } else {
+        return <p>No other radius options are available.</p>;
+      }
+    })()}
+  </div>
+</div>
+
+    
+    
   </div>
 </section>
         </>
@@ -1046,8 +1087,19 @@ export default function ResultsPage() {
           <meta name="description" content={`Find nearby cities and towns within ${radius} miles of ${query} including distance, coordinates, and other details.`} />
           <link rel="preload" href="/globals.css" as="style" />
           <meta name="robots" content="index, follow"></meta>
-        </Head>
-        
+
+          <style>{`
+   footer {
+  margin-top: 40px !important; /* Adds space above footer */
+}
+.faq-section {
+  margin-bottom: 40px !important; /* Adjust spacing as needed */
+}
+
+    }
+  `}</style>
+</Head>
+       
         <main id="main-content">
           <section className="hero-banner" aria-labelledby="main-heading" aria-describedby="hero-desc">
             <div className="content-container">
