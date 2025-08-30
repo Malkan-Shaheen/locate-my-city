@@ -1111,9 +1111,9 @@ export default function ResultsPage() {
           </section>
           
           <div className="container">
-            <Suspense fallback={<div className="info">Loading search parameters...</div>}>
-              <ResultsContent />
-            </Suspense>
+           <Suspense fallback={<div className="info">Loading search parameters...</div>}>
+  <ResultsContent key={`${radius}-${query}`} />
+</Suspense>
           </div>
         </main>
         

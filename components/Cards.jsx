@@ -23,14 +23,14 @@ export default function Features() {
       icon: "🪨",
       title: "Rock Cities",
       desc: "Explore cities and towns with “rock” in their name—unique places tied together by one powerful word.",
-      link: "/rock",
+      link: "/cities-with-rock-in-their-name",
       btn: "Explore Rocks",
     },
     {
       icon: "💧",
       title: "Spring Cities",
       desc: "Explore cities with “Spring” in their name—perfect for discovering places that sound refreshing, whether or not water is involved.",
-      link: "/spring",
+      link: "/cities-with-spring-in-their-name",
       btn: "Discover Springs",
     },
     {
