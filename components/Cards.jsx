@@ -30,7 +30,7 @@ export default function Features() {
       icon: "💧",
       title: "Spring Cities",
       desc: "Explore cities with “Spring” in their name—perfect for discovering places that sound refreshing, whether or not water is involved.",
-      link: "/cities-with-spring-in-their-name",
+      link: "/spring",
       btn: "Discover Springs",
     },
     {
