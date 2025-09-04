@@ -21,7 +21,7 @@ export default function ColorLocationsExplorer() {
       try {
         setIsDataLoading(true);
         
-        const backendUrl = 'https://locatemycity1-backend-1.onrender.com/api/colors/flat';
+        const backendUrl = 'https://backend-locate1.onrender.com/api/colors/flat';
         console.log("Fetching from:", backendUrl);
 
         const response = await fetch(backendUrl);

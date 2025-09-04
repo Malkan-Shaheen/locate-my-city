@@ -34,7 +34,7 @@ useEffect(() => {
   let isMounted = true;
 
   const loadLocationData = async () => {
-    const backendUrl = 'https://locatemycity1-backend-1.onrender.com';
+    const backendUrl = 'https://backend-locate1.onrender.com/';
     console.log("🔄 Starting to load location data from:", backendUrl);
 
     try {

@@ -85,7 +85,7 @@ export default function SpringLocationsExplorer() {
     const loadData = async () => {
       try {
         setIsLoading(true);
-        const backendUrl = 'https://locatemycity1-backend-1.onrender.com';
+        const backendUrl = 'https://backend-locate1.onrender.com/';
 
         const response = await fetch(`${backendUrl}/api/springs/flat`, {
           signal: controller.signal
