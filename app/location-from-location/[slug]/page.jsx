@@ -68,6 +68,7 @@ export default function DistanceResult() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeFAQ, setActiveFAQ] = useState(null);
   const [popularRoutes, setPopularRoutes] = useState([]);
+   const [metaDescription, setMetaDescription] = useState('');
 
   const initialWeatherState = useMemo(() => ({
     temp: "Loading...",
@@ -284,6 +285,15 @@ export default function DistanceResult() {
 
     fetchLocations();
   }, [sourceName, destinationName, router, calculateDistance, fetchWeatherData, fetchPopularRoutes]);
+useEffect(() => {
+  if (distanceMetrics && sourceShortName && destinationShortName) {
+    setMetaDescription(
+      `The distance from ${sourceShortName} to ${destinationShortName} is ${distanceMetrics.miles} miles (${distanceMetrics.km} km / ${distanceMetrics.nauticalMiles} nautical miles). Use LocateMyCity to instantly calculate distances, compare locations, and explore nearby attractions worldwide.`
+    );
+  }
+}, [distanceMetrics, sourceShortName, destinationShortName]);
+
+
 
   const toggleFAQ = useCallback((index) => {
     setActiveFAQ(activeFAQ === index ? null : index);
@@ -312,138 +322,139 @@ export default function DistanceResult() {
     <>
       <Header />
       <Head>
-        <title>{`How far is ${sourceShortName} from ${destinationShortName}?`}</title>
-        <meta name="description" content={`Distance between ${sourcePlace?.display_name} and ${destinationPlace?.display_name}`} />
-     <link rel="preload" href="/globals.css" as="style" />
-     <meta name="robots" content="index, follow">
-</meta>
-        
-        {/* Structured Data - Organization and WebApplication */}
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              "@context": "https://schema.org",
-              "@graph": [
-                {
-                  "@type": "Organization",
-                  "@id": "https://locatemycity.com#organization",
-                  "name": "LocateMyCity",
-                  "url": "https://locatemycity.com",
-                  "logo": {
-                    "@type": "ImageObject",
-                    "url": "https://locatemycity.com/logo.png"
-                  }
-                },
-                {
-                  "@type": "WebApplication",
-                  "name": "LocateMyCity Distance Calculator",
-                  "url": "https://locatemycity.com/location-from-location",
-                  "operatingSystem": "Web",
-                  "applicationCategory": "TravelApplication",
-                  "applicationSubCategory": "Distance calculator",
-                  "isAccessibleForFree": true,
-                  "featureList": [
-                    "Two-point distance (from & to)",
-                    "Miles/Kilometers/Nautical Miles",
-                    "Nominatim auto-complete",
-                    "Weather snapshots"
-                  ],
-                  "offers": {
-                    "@type": "Offer",
-                    "price": "0",
-                    "priceCurrency": "USD",
-                    "category": "free"
-                  },
-                  "publisher": {
-                    "@id": "https://locatemycity.com#organization"
-                  },
-                  "potentialAction": {
-                    "@type": "FindAction",
-                    "name": "Calculate distance between two places",
-                    "target": {
-                      "@type": "EntryPoint",
-                      "urlTemplate": "https://locatemycity.com/location-from-location/how-far-is-{from}-from-{to}",
-                      "inLanguage": "en",
-                      "actionPlatform": [
-                        "http://schema.org/DesktopWebPlatform",
-                        "http://schema.org/MobileWebPlatform"
-                      ]
-                    },
-                    "query-input": [
-                      "required name=from",
-                      "required name=to"
-                    ]
-                  }
-                },
-                {
-                  "@type": "BreadcrumbList",
-                  "itemListElement": [
-                    {
-                      "@type": "ListItem",
-                      "position": 1,
-                      "name": "Home",
-                      "item": "https://locatemycity.com"
-                    },
-                    {
-                      "@type": "ListItem",
-                      "position": 2,
-                      "name": "Distance Calculator",
-                      "item": "https://locatemycity.com/location-from-location"
-                    }
-                  ]
-                }
+  <title>{`How Far is ${sourceShortName} from ${destinationShortName}? | Distance Calculator`}</title>
+  <meta 
+    name="description" 
+    content={metaDescription || `Calculating distance between ${sourceShortName} and ${destinationShortName}. Use LocateMyCity to instantly calculate distances, compare locations, and explore nearby attractions worldwide.`} 
+  />
+  <meta name="robots" content="index, follow" />
+  <link rel="preload" href="/globals.css" as="style" />
+  
+  {/* Structured Data - Organization and WebApplication */}
+  <script
+    type="application/ld+json"
+    dangerouslySetInnerHTML={{
+      __html: JSON.stringify({
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://locatemycity.com#organization",
+            "name": "LocateMyCity",
+            "url": "https://locatemycity.com",
+            "logo": {
+              "@type": "ImageObject",
+              "url": "https://locatemycity.com/logo.png"
+            }
+          },
+          {
+            "@type": "WebApplication",
+            "name": "LocateMyCity Distance Calculator",
+            "url": "https://locatemycity.com/location-from-location",
+            "operatingSystem": "Web",
+            "applicationCategory": "TravelApplication",
+            "applicationSubCategory": "Distance calculator",
+            "isAccessibleForFree": true,
+            "featureList": [
+              "Two-point distance (from & to)",
+              "Miles/Kilometers/Nautical Miles",
+              "Nominatim auto-complete",
+              "Weather snapshots"
+            ],
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD",
+              "category": "free"
+            },
+            "publisher": {
+              "@id": "https://locatemycity.com#organization"
+            },
+            "potentialAction": {
+              "@type": "FindAction",
+              "name": "Calculate distance between two places",
+              "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": "https://locatemycity.com/location-from-location/how-far-is-{from}-from-{to}",
+                "inLanguage": "en",
+                "actionPlatform": [
+                  "http://schema.org/DesktopWebPlatform",
+                  "http://schema.org/MobileWebPlatform"
+                ]
+              },
+              "query-input": [
+                "required name=from",
+                "required name=to"
               ]
-            })
-          }}
-        />
+            }
+          },
+          {
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+              {
+                "@type": "ListItem",
+                "position": 1,
+                "name": "Home",
+                "item": "https://locatemycity.com"
+              },
+              {
+                "@type": "ListItem",
+                "position": 2,
+                "name": "Distance Calculator",
+                "item": "https://locatemycity.com/location-from-location"
+              }
+            ]
+          }
+        ]
+      })
+    }}
+  />
 
-        {/* Structured Data - FAQPage */}
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              "@context": "https://schema.org",
-              "@type": "FAQPage",
-              "mainEntity": [
-                {
-                  "@type": "Question",
-                  "name": "How does the distance calculator work?",
-                  "acceptedAnswer": {
-                    "@type": "Answer",
-                    "text": "We calculate straight-line (great-circle) distance between two points. Driving times differ by route and traffic."
-                  }
-                },
-                {
-                  "@type": "Question",
-                  "name": "Can I pick locations anywhere in the world?",
-                  "acceptedAnswer": {
-                    "@type": "Answer",
-                    "text": "Yes. Enter any city, address, or landmark in both fields, or select from the suggestions."
-                  }
-                },
-                {
-                  "@type": "Question",
-                  "name": "Which units can I use?",
-                  "acceptedAnswer": {
-                    "@type": "Answer",
-                    "text": "Miles, kilometers, and nautical miles are supported."
-                  }
-                },
-                {
-                  "@type": "Question",
-                  "name": "Do you show weather for each location?",
-                  "acceptedAnswer": {
-                    "@type": "Answer",
-                    "text": "We display quick weather snapshots for each selected location when available."
-                  }
-                }
-              ]
-            })
-          }}
-        />
-      </Head>
-
+  {/* Structured Data - FAQPage */}
+  <script
+    type="application/ld+json"
+    dangerouslySetInnerHTML={{
+      __html: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "How does the distance calculator work?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "We calculate straight-line (great-circle) distance between two points. Driving times differ by route and traffic."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I pick locations anywhere in the world?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Enter any city, address, or landmark in both fields, or select from the suggestions."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Which units can I use?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Miles, kilometers, and nautical miles are supported."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Do you show weather for each location?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "We display quick weather snapshots for each selected location when available."
+            }
+          }
+        ]
+      })
+    }}
+  />
+</Head>
       <main>
         <section className="distance-result__header" aria-labelledby="distance-header">
           <div className="distance-result__header-content">

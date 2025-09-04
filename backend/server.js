@@ -7,35 +7,32 @@ const app = express();
 
 // Explicitly allowed origins
 const allowedOrigins = [
-  'http://localhost:3000',
-  'https://locate-my-city.vercel.app',
-  'https://locate-my-city-81kz.vercel.app',
-  'https://locatemycitywebmain.vercel.app',
-  'https://locate-my-city-nlzad4qy2-malkans-projects-4f541c42.vercel.app',
-  'https://locate-my-city-blue.vercel.app'
+  "http://localhost:3000",
+  "https://locate-my-city-blue.vercel.app"
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow server-to-server requests (like Postman, curl, etc.)
+    // Allow requests with no origin (Postman, curl, server-to-server)
     if (!origin) return callback(null, true);
 
-    // Allow localhost during dev
+    // ✅ Allow localhost dev
     if (origin.startsWith("http://localhost:3000")) {
       return callback(null, true);
     }
 
-    // Allow any Vercel preview or production deployment of your project
+    // ✅ Allow any Vercel preview/prod deployment like
+    // https://locate-my-city-blue.vercel.app or https://locate-my-city.vercel.app
     if (/^https:\/\/locate-my-city.*\.vercel\.app$/.test(origin)) {
       return callback(null, true);
     }
 
-    // Allow if in explicit whitelist
+    // ✅ Explicit whitelist
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
 
-    // Otherwise block
+    // ❌ Block anything else
     return callback(new Error("Not allowed by CORS: " + origin));
   },
   credentials: true
@@ -118,5 +115,5 @@ app.get('/ping', (req, res) => {
 // Start server
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`✅ Server running on port ${PORT}`);
 });
