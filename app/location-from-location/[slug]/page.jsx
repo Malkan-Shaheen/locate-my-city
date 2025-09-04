@@ -70,6 +70,9 @@ export default function DistanceResult() {
   const [popularRoutes, setPopularRoutes] = useState([]);
    const [metaDescription, setMetaDescription] = useState('');
 
+     const sourceShortName = sourcePlace?.display_name?.split(',')[0];
+  const destinationShortName = destinationPlace?.display_name?.split(',')[0];
+
   const initialWeatherState = useMemo(() => ({
     temp: "Loading...",
     wind: "Loading...",
@@ -315,8 +318,7 @@ useEffect(() => {
     );
   }
 
-  const sourceShortName = sourcePlace?.display_name?.split(',')[0];
-  const destinationShortName = destinationPlace?.display_name?.split(',')[0];
+
 
   return (
     <>
